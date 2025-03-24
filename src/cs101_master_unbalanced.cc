@@ -27,6 +27,7 @@ extern "C" {
 
 
 using namespace Napi;
+using namespace std;
 
 FunctionReference IEC101MasterUnbalanced::constructor;
 

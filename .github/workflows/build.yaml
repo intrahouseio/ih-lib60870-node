@@ -19,8 +19,6 @@ jobs:
         arch:
           - x64
         include:
-          - os: windows-latest
-            arch: ia32
           - os: macos-latest
             arch: arm64
           - os: ubuntu-latest
@@ -60,35 +58,6 @@ jobs:
         run: |
           choco install -y cmake
 
-      - name: Build lib60870 for Windows
-        if: matrix.os == 'windows-latest'
-        run: |
-          # Clone lib60870 repository
-          git clone https://github.com/mz-automation/lib60870.git
-          cd lib60870/lib60870-C
-          
-          # Create build directory
-          mkdir build
-          cd build
-          
-          # Configure CMake for x64 with serial port support
-          if ("${{ matrix.arch }}" -eq "x64") {
-            cmake -A x64 -DWITH_SERIAL=1 ..
-            cmake --build . --config Release
-            # Move the generated library to project lib/build
-            mkdir -p ..\..\lib\build
-            copy src\Release\lib60870.lib ..\..\..\lib\build\lib60870_win_x64.lib
-          }
-          
-          # Configure CMake for ia32 with serial port support
-          if ("${{ matrix.arch }}" -eq "ia32") {
-            cmake -A Win32 -DWITH_SERIAL=1 ..
-            cmake --build . --config Release
-            # Move the generated library to project lib/build
-            mkdir -p ..\..\lib\build
-            copy src\Release\lib60870.lib ..\..\..\lib\build\lib60870_win_ia32.lib
-          }
-
       - name: Verify library presence (Unix)
         if: matrix.os != 'windows-latest'
         run: |
@@ -109,10 +78,8 @@ jobs:
         if: matrix.os == 'windows-latest'
         run: |
           dir lib\build
-          if ("${{ matrix.os }}" -eq "windows-latest" -and "${{ matrix.arch }}" -eq "x64") {
+          if ("${{ matrix.arch }}" -eq "x64") {
             if (-not (Test-Path lib\build\lib60870_win_x64.lib)) { Write-Error "Missing lib60870_win_x64.lib"; exit 1 }
-          } elseif ("${{ matrix.os }}" -eq "windows-latest" -and "${{ matrix.arch }}" -eq "ia32") {
-            if (-not (Test-Path lib\build\lib60870_win_ia32.lib)) { Write-Error "Missing lib60870_win_ia32.lib"; exit 1 }
           }
 
       - name: Install dependencies
@@ -144,8 +111,6 @@ jobs:
         run: |
           if [ "${{ matrix.os }}" == "windows-latest" ] && [ "${{ matrix.arch }}" == "x64" ]; then
             echo "output_dir=win64" >> $GITHUB_OUTPUT
-          elif [ "${{ matrix.os }}" == "windows-latest" ] && [ "${{ matrix.arch }}" == "ia32" ]; then
-            echo "output_dir=win32" >> $GITHUB_OUTPUT
           elif [ "${{ matrix.os }}" == "macos-latest" ] && [ "${{ matrix.arch }}" == "x64" ]; then
             echo "output_dir=macos_x64" >> $GITHUB_OUTPUT
           elif [ "${{ matrix.os }}" == "macos-latest" ] && [ "${{ matrix.arch }}" == "arm64" ]; then
@@ -168,3 +133,13 @@ jobs:
         with:
           name: addon_iec60870-${{ matrix.os }}-${{ matrix.arch }}
           path: builds/${{ steps.set-output-dir.outputs.output_dir }}/addon_iec60870.node
+
+      - name: Release Prebuilds
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: "v${{ github.sha }}"
+          files: builds/${{ steps.set-output-dir.outputs.output_dir }}/addon_iec60870.node
+          prerelease: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

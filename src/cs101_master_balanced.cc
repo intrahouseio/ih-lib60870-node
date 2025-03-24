@@ -24,6 +24,7 @@ extern "C"
 }
 
 using namespace Napi;
+using namespace std;
 
 class IEC101MasterBalanced : public ObjectWrap<IEC101MasterBalanced>
 {

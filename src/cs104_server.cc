@@ -13,10 +13,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-
-
-
 using namespace Napi;
+using namespace std;
 
 Napi::FunctionReference IEC104Server::constructor;
 
