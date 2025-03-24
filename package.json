@@ -1,0 +1,45 @@
+{
+  "name": "ih-lib60870-node",
+  "version": "1.0.7",
+  "description": "Cross-platform Node.js native addon of the iec60870 support",
+  "main": "index.js",
+  "scripts": {
+    "test": "node -e \"const { Example } = require('index'); const ex = new Example(10); console.log(ex.getPlatform(), ex.add(5));\""
+  },
+  "keywords": [
+    "native",
+    "addon",
+    "cross-platform"
+  ],
+  "author": "Amigo9090",
+  "license": "MIT",
+  "files": [   
+    "builds/"
+  ],
+  "devDependencies": {
+    "eslint": "8.56.0",
+    "mocha": "10.2.0",
+    "prebuild": "12.1.0",
+     "node-gyp": "8.x",
+     "bindings": "^1.5.0",
+     "node-addon-api": "^8.3.1",
+     "prebuild-install": "^7.1.1",
+     "tar": "^6.1.11"
+  },
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ],
+  "cpu": [
+    "x64",
+    "ia32",
+    "arm64",
+    "arm"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/intrahouseio/ih-lib60870-node.git"
+  },
+  "homepage": "https://github.com/intrahouseio/ih-lib60870-node#readme"
+}
