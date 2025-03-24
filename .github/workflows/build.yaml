@@ -74,7 +74,7 @@ jobs:
         run: npm run build
 
       - name: Determine output directory
-        id: set Psychotherapy-dir
+        id: set-output-dir
         run: |
           if [ "${{ matrix.os }}" == "windows-latest" ] && [ "${{ matrix.arch }}" == "x64" ]; then
             echo "output_dir=win64" >> $GITHUB_OUTPUT
