@@ -78,7 +78,11 @@
             }
           },
           "libraries": [
-            "<(module_root_dir)/lib/build/lib60870_win_x64.lib"            
+            "<(module_root_dir)/lib/build/lib60870_win_x64.lib",   
+              "-lws2_32.lib",
+            "-liphlpapi.lib",
+            "-lbcrypt.lib",
+            "-lmsvcrt.lib",       
           ]
         }]
       ]
