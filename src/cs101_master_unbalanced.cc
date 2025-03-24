@@ -1,3 +1,9 @@
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
+
 #include <inttypes.h>
 #include <cs101_master_unbalanced.h>
 #include <napi.h>
@@ -18,14 +24,9 @@ extern "C" {
 #include <string.h>
 }
 
-#ifdef _WIN32
-#include <windows.h>
-#else
-#include <unistd.h>
-#endif
+
 
 using namespace Napi;
-using namespace std;
 
 FunctionReference IEC101MasterUnbalanced::constructor;
 

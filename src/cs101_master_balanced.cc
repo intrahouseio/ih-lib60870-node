@@ -1,3 +1,9 @@
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
+
 #include <inttypes.h>
 #include <napi.h>
 #include <thread>
@@ -17,14 +23,7 @@ extern "C"
 #include <string.h>
 }
 
-#ifdef _WIN32
-#include <windows.h>
-#else
-#include <unistd.h>
-#endif
-
 using namespace Napi;
-using namespace std;
 
 class IEC101MasterBalanced : public ObjectWrap<IEC101MasterBalanced>
 {

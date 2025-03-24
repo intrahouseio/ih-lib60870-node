@@ -1,3 +1,9 @@
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
+
 #include <vector>       // Добавлено для std::vector
 #include <tuple>        // Добавлено для std::tuple
 #include "cs104_client.h"
@@ -7,14 +13,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-#ifdef _WIN32
-#include <windows.h>
-#else
-#include <unistd.h>
-#endif
+
 
 using namespace Napi;
-using namespace std;
 
 Napi::FunctionReference IEC104Client::constructor;
 

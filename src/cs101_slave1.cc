@@ -1,3 +1,9 @@
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
+
 #include "cs101_slave1.h"
 #include <inttypes.h>
 #include <stdexcept>
@@ -7,13 +13,6 @@
 #include <string.h>
 
 using namespace Napi;
-using namespace std;
-
-#ifdef _WIN32
-#include <windows.h>
-#else
-#include <unistd.h>
-#endif
 
 Napi::FunctionReference IEC101Slave::constructor;
 

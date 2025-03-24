@@ -1,3 +1,9 @@
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
+
 #include "cs104_server.h"
 #include <inttypes.h>
 #include <stdexcept>
@@ -7,14 +13,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-#ifdef _WIN32
-#include <windows.h>
-#else
-#include <unistd.h>
-#endif
+
+
 
 using namespace Napi;
-using namespace std;
 
 Napi::FunctionReference IEC104Server::constructor;
 
