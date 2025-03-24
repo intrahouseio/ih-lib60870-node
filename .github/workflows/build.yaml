@@ -1,0 +1,107 @@
+name: Build Native Addon
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        os:
+          - ubuntu-latest   # Linux x64, arm64, arm
+          - windows-latest  # Windows x64, ia32
+          - macos-latest    # macOS x64, arm64
+        arch:
+          - x64
+        include:
+          - os: windows-latest
+            arch: ia32
+          - os: macos-latest
+            arch: arm64
+          - os: ubuntu-latest
+            arch: arm64
+          - os: ubuntu-latest
+            arch: arm
+      fail-fast: false
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install cross-compilers for Linux ARM
+        if: matrix.os == 'ubuntu-latest' && (matrix.arch == 'arm' || matrix.arch == 'arm64')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Configure build for specific architecture
+        run: |
+          if [ "${{ matrix.os }}" == "ubuntu-latest" ] && [ "${{ matrix.arch }}" == "arm" ]; then
+            npm run configure -- --arch=arm --target=arm-linux-gnueabihf
+          elif [ "${{ matrix.os }}" == "ubuntu-latest" ] && [ "${{ matrix.arch }}" == "arm64" ]; then
+            npm run configure -- --arch=arm64 --target=aarch64-linux-gnu
+          elif [ "${{ matrix.arch }}" != "x64" ]; then
+            npm run configure -- --arch=${{ matrix.arch }}
+          else
+            npm run configure
+          fi
+
+      - name: Build addon
+        run: npm run build
+
+      - name: Determine output directory
+        id: set-output-dir
+        run: |
+          if [ "${{ matrix.os }}" == "windows-latest" ] && [ "${{ matrix.arch }}" == "x64" ]; then
+            echo "output_dir=win64" >> $GITHUB_OUTPUT
+          elif [ "${{ matrix.os }}" == "windows-latest" ] && [ "${{ matrix.arch }}" == "ia32" ]; then
+            echo "output_dir=win32" >> $GITHUB_OUTPUT
+          elif [ "${{ matrix.os }}" == "macos-latest" ] && [ "${{ matrix.arch }}" == "x64" ]; then
+            echo "output_dir=macos_x64" >> $GITHUB_OUTPUT
+          elif [ "${{ matrix.os }}" == "macos-latest" ] && [ "${{ matrix.arch }}" == "arm64" ]; then
+            echo "output_dir=macos_arm64" >> $GITHUB_OUTPUT
+          elif [ "${{ matrix.os }}" == "ubuntu-latest" ] && [ "${{ matrix.arch }}" == "x64" ]; then
+            echo "output_dir=linux_x64" >> $GITHUB_OUTPUT
+          elif [ "${{ matrix.os }}" == "ubuntu-latest" ] && [ "${{ matrix.arch }}" == "arm64" ]; then
+            echo "output_dir=linux_arm64" >> $GITHUB_OUTPUT
+          elif [ "${{ matrix.os }}" == "ubuntu-latest" ] && [ "${{ matrix.arch }}" == "arm" ]; then
+            echo "output_dir=linux_arm" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create builds directory and move binary
+        run: |
+          mkdir -p builds/${{ steps.set-output-dir.outputs.output_dir }}
+          mv build/Release/myaddon.node builds/${{ steps.set-output-dir.outputs.output_dir }}/myaddon.node
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: myaddon-${{ matrix.os }}-${{ matrix.arch }}
+          path: builds/${{ steps.set-output-dir.outputs.output_dir }}/myaddon.node
+
+      # Опциональный шаг для публикации в npm (раскомментируйте при необходимости)
+      # - name: Publish to npm
+      #   if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      #   run: |
+      #     npm publish --access public
+      #   env:
+      #     NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
