@@ -60,9 +60,10 @@ jobs:
         run: |
           choco install -y cmake
 
-      - name: Verify library presence
+      - name: Verify library presence (Unix)
+        if: matrix.os != 'windows-latest'
         run: |
-          ls -la lib/build/ || dir lib/build
+          ls -la lib/build/
           if [ "${{ matrix.os }}" == "ubuntu-latest" ] && [ "${{ matrix.arch }}" == "x64" ]; then
             test -f lib/build/lib60870_linux_x64.a || (echo "Missing lib60870_linux_x64.a" && exit 1)
           elif [ "${{ matrix.os }}" == "ubuntu-latest" ] && [ "${{ matrix.arch }}" == "arm64" ]; then
@@ -73,11 +74,17 @@ jobs:
             test -f lib/build/lib60870_darwin_arm64.a || (echo "Missing lib60870_darwin_arm64.a" && exit 1)
           elif [ "${{ matrix.os }}" == "macos-latest" ] && [ "${{ matrix.arch }}" == "x64" ]; then
             test -f lib/build/lib60870_darwin_x64.a || (echo "Missing lib60870_darwin_x64.a" && exit 1)
-          elif [ "${{ matrix.os }}" == "windows-latest" ] && [ "${{ matrix.arch }}" == "x64" ]; then
-            test -f lib/build/lib60870_win_x64.lib || (echo "Missing lib60870_win_x64.lib" && exit 1)
-          elif [ "${{ matrix.os }}" == "windows-latest" ] && [ "${{ matrix.arch }}" == "ia32" ]; then
-            test -f lib/build/lib60870_win_ia32.lib || (echo "Missing lib60870_win_ia32.lib" && exit 1)
           fi
+
+      - name: Verify library presence (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          dir lib\build
+          if ("${{ matrix.os }}" -eq "windows-latest" -and "${{ matrix.arch }}" -eq "x64") {
+            if (-not (Test-Path lib\build\lib60870_win_x64.lib)) { Write-Error "Missing lib60870_win_x64.lib"; exit 1 }
+          } elseif ("${{ matrix.os }}" -eq "windows-latest" -and "${{ matrix.arch }}" -eq "ia32") {
+            if (-not (Test-Path lib\build\lib60870_win_ia32.lib)) { Write-Error "Missing lib60870_win_ia32.lib"; exit 1 }
+          }
 
       - name: Install dependencies
         run: npm install
