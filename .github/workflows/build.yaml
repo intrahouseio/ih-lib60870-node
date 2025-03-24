@@ -133,13 +133,3 @@ jobs:
         with:
           name: addon_iec60870-${{ matrix.os }}-${{ matrix.arch }}
           path: builds/${{ steps.set-output-dir.outputs.output_dir }}/addon_iec60870.node
-
-      - name: Release Prebuilds
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: "v${{ github.sha }}"
-          files: builds/${{ steps.set-output-dir.outputs.output_dir }}/addon_iec60870.node
-          prerelease: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
