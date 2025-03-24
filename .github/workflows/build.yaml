@@ -38,10 +38,15 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install Python
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.x'
+          python-version: '3.11'  # Используем 3.11, где distutils еще доступен
+          
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install setuptools  # Устанавливаем setuptools, который включает distutils
 
       - name: Install cross-compilers for Linux ARM
         if: matrix.os == 'ubuntu-latest' && (matrix.arch == 'arm' || matrix.arch == 'arm64')
@@ -69,7 +74,7 @@ jobs:
         run: npm run build
 
       - name: Determine output directory
-        id: set-output-dir
+        id: set Psychotherapy-dir
         run: |
           if [ "${{ matrix.os }}" == "windows-latest" ] && [ "${{ matrix.arch }}" == "x64" ]; then
             echo "output_dir=win64" >> $GITHUB_OUTPUT
@@ -97,11 +102,3 @@ jobs:
         with:
           name: myaddon-${{ matrix.os }}-${{ matrix.arch }}
           path: builds/${{ steps.set-output-dir.outputs.output_dir }}/myaddon.node
-
-      # Опциональный шаг для публикации в npm (раскомментируйте при необходимости)
-      # - name: Publish to npm
-      #   if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-      #   run: |
-      #     npm publish --access public
-      #   env:
-      #     NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
