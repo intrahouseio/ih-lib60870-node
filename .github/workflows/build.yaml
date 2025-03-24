@@ -77,7 +77,7 @@ jobs:
             cmake --build . --config Release
             # Move the generated library to project lib/build
             mkdir -p ..\..\lib\build
-            copy Release\lib60870.lib ..\..\lib\build\lib60870_win_x64.lib
+            copy src\Release\lib60870.lib ..\..\lib\build\lib60870_win_x64.lib
           }
           
           # Configure CMake for ia32 with serial port support
@@ -86,7 +86,7 @@ jobs:
             cmake --build . --config Release
             # Move the generated library to project lib/build
             mkdir -p ..\..\lib\build
-            copy Release\lib60870.lib ..\..\lib\build\lib60870_win_ia32.lib
+            copy src\Release\lib60870.lib ..\..\lib\build\lib60870_win_ia32.lib
           }
 
       - name: Verify library presence (Unix)
