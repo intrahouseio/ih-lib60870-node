@@ -70,7 +70,7 @@
             "-lpthread"
           ]
         }],
-        ["OS=='win'", {
+        ["OS=='win' and target_arch=='x64'", {
           "msvs_settings": {
             "VCCLCompilerTool": {
               "ExceptionHandling": 1,
@@ -78,8 +78,18 @@
             }
           },
           "libraries": [
-            "<(module_root_dir)/lib/build/lib60870_win_x64.lib",
-            "-l$(NODE_DIR)/x64/node.lib"
+            "<(module_root_dir)/lib/build/lib60870_win_x64.lib"            
+          ]
+        }],
+         ["OS=='win' and target_arch=='ia32'", {
+          "msvs_settings": {
+            "VCCLCompilerTool": {
+              "ExceptionHandling": 1,
+              "AdditionalOptions": [ "/std:c++17" ]
+            }
+          },
+          "libraries": [
+            "<(module_root_dir)/lib/build/lib60870_win_ia32.lib"           
           ]
         }]
       ]

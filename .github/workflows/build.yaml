@@ -60,6 +60,35 @@ jobs:
         run: |
           choco install -y cmake
 
+      - name: Build lib60870 for Windows
+        if: matrix.os == 'windows-latest'
+        run: |
+          # Clone lib60870 repository
+          git clone https://github.com/mz-automation/lib60870.git
+          cd lib60870/lib60870-C
+          
+          # Create build directory
+          mkdir build
+          cd build
+          
+          # Configure CMake for x64 with serial port support
+          if ("${{ matrix.arch }}" -eq "x64") {
+            cmake -A x64 -DWITH_SERIAL=1 ..
+            cmake --build . --config Release
+            # Move the generated library to project lib/build
+            mkdir -p ..\..\lib\build
+            copy Release\lib60870.lib ..\..\lib\build\lib60870_win_x64.lib
+          }
+          
+          # Configure CMake for ia32 with serial port support
+          if ("${{ matrix.arch }}" -eq "ia32") {
+            cmake -A Win32 -DWITH_SERIAL=1 ..
+            cmake --build . --config Release
+            # Move the generated library to project lib/build
+            mkdir -p ..\..\lib\build
+            copy Release\lib60870.lib ..\..\lib\build\lib60870_win_ia32.lib
+          }
+
       - name: Verify library presence (Unix)
         if: matrix.os != 'windows-latest'
         run: |
