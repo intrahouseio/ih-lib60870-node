@@ -85,26 +85,29 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Configure build for specific architecture
+      - name: Configure build for Unix
+        if: matrix.os != 'windows-latest'
         run: |
-          if ("${{ matrix.os }}" -eq "ubuntu-latest" -and "${{ matrix.arch }}" -eq "arm") {
-            $env:CC="arm-linux-gnueabihf-gcc"
-            $env:CXX="arm-linux-gnueabihf-g++"
-            $env:LINK="arm-linux-gnueabihf-g++"
+          if [ "${{ matrix.os }}" == "ubuntu-latest" ] && [ "${{ matrix.arch }}" == "arm" ]; then
+            export CC=arm-linux-gnueabihf-gcc
+            export CXX=arm-linux-gnueabihf-g++
+            export LINK=arm-linux-gnueabihf-g++
             npm run configure -- --arch=arm
-          }
-          elseif ("${{ matrix.os }}" -eq "ubuntu-latest" -and "${{ matrix.arch }}" -eq "arm64") {
-            $env:CC="aarch64-linux-gnu-gcc"
-            $env:CXX="aarch64-linux-gnu-g++"
-            $env:LINK="aarch64-linux-gnu-g++"
+          elif [ "${{ matrix.os }}" == "ubuntu-latest" ] && [ "${{ matrix.arch }}" == "arm64" ]; then
+            export CC=aarch64-linux-gnu-gcc
+            export CXX=aarch64-linux-gnu-g++
+            export LINK=aarch64-linux-gnu-g++
             npm run configure -- --arch=arm64
-          }
-          elseif ("${{ matrix.arch }}" -ne "x64") {
+          elif [ "${{ matrix.arch }}" != "x64" ]; then
             npm run configure -- --arch=${{ matrix.arch }}
-          }
-          else {
+          else
             npm run configure
-          }
+          fi
+
+      - name: Configure build for Windows
+        if: matrix.os == 'windows-latest'
+        run: |
+          npm run configure
 
       - name: Build addon
         run: npm run build
@@ -112,28 +115,23 @@ jobs:
       - name: Determine output directory
         id: set-output-dir
         run: |
-          if ("${{ matrix.os }}" -eq "windows-latest" -and "${{ matrix.arch }}" -eq "x64") {
+          if [ "${{ matrix.os }}" == "windows-latest" ] && [ "${{ matrix.arch }}" == "x64" ]; then
             echo "output_dir=win64" >> $GITHUB_OUTPUT
-          }
-          elseif ("${{ matrix.os }}" -eq "macos-latest" -and "${{ matrix.arch }}" -eq "x64") {
+          elif [ "${{ matrix.os }}" == "macos-latest" ] && [ "${{ matrix.arch }}" == "x64" ]; then
             echo "output_dir=macos_x64" >> $GITHUB_OUTPUT
-          }
-          elseif ("${{ matrix.os }}" -eq "macos-latest" -and "${{ matrix.arch }}" -eq "arm64") {
+          elif [ "${{ matrix.os }}" == "macos-latest" ] && [ "${{ matrix.arch }}" == "arm64" ]; then
             echo "output_dir=macos_arm64" >> $GITHUB_OUTPUT
-          }
-          elseif ("${{ matrix.os }}" -eq "ubuntu-latest" -and "${{ matrix.arch }}" -eq "x64") {
+          elif [ "${{ matrix.os }}" == "ubuntu-latest" ] && [ "${{ matrix.arch }}" == "x64" ]; then
             echo "output_dir=linux_x64" >> $GITHUB_OUTPUT
-          }
-          elseif ("${{ matrix.os }}" -eq "ubuntu-latest" -and "${{ matrix.arch }}" -eq "arm64") {
+          elif [ "${{ matrix.os }}" == "ubuntu-latest" ] && [ "${{ matrix.arch }}" == "arm64" ]; then
             echo "output_dir=linux_arm64" >> $GITHUB_OUTPUT
-          }
-          elseif ("${{ matrix.os }}" -eq "ubuntu-latest" -and "${{ matrix.arch }}" -eq "arm") {
+          elif [ "${{ matrix.os }}" == "ubuntu-latest" ] && [ "${{ matrix.arch }}" == "arm" ]; then
             echo "output_dir=linux_arm" >> $GITHUB_OUTPUT
-          }
+          fi
 
       - name: Create builds directory and move binary
         run: |
-          mkdir -p builds/${{ steps.set-output-dir.outputs.output_dir }}
+          New-Item -Path builds/${{ steps.set-output-dir.outputs.output_dir }} -ItemType Directory -Force
           mv build/Release/addon_iec60870.node builds/${{ steps.set-output-dir.outputs.output_dir }}/addon_iec60870.node
 
       - name: Upload artifacts
