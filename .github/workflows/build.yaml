@@ -95,10 +95,10 @@ jobs:
       - name: Create builds directory and move binary
         run: |
           mkdir -p builds/${{ steps.set-output-dir.outputs.output_dir }}
-          mv build/Release/myaddon.node builds/${{ steps.set-output-dir.outputs.output_dir }}/myaddon.node
+          mv build/Release/addon_iec60870.node builds/${{ steps.set-output-dir.outputs.output_dir }}/addon_iec60870.node
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: myaddon-${{ matrix.os }}-${{ matrix.arch }}
-          path: builds/${{ steps.set-output-dir.outputs.output_dir }}/myaddon.node
+          name: addon_iec60870-${{ matrix.os }}-${{ matrix.arch }}
+          path: builds/${{ steps.set-output-dir.outputs.output_dir }}/addon_iec60870.node
