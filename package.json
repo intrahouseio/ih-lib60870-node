@@ -4,7 +4,8 @@
   "description": "Cross-platform Node.js native addon of the iec60870 support",
   "main": "index.js",
   "scripts": {
-    "test": "node -e \"const { Example } = require('index'); const ex = new Example(10); console.log(ex.getPlatform(), ex.add(5));\""
+    "configure": "node-gyp configure",
+    "build": "node-gyp build"
   },
   "keywords": [
     "native",
