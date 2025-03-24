@@ -112,12 +112,11 @@ jobs:
       - name: Build addon
         run: npm run build
 
-      - name: Determine output directory
-        id: set-output-dir
+      - name: Determine output directory (Unix)
+        if: matrix.os != 'windows-latest'
+        id: set-output-dir-unix
         run: |
-          if [ "${{ matrix.os }}" == "windows-latest" ] && [ "${{ matrix.arch }}" == "x64" ]; then
-            echo "output_dir=win64" >> $GITHUB_OUTPUT
-          elif [ "${{ matrix.os }}" == "macos-latest" ] && [ "${{ matrix.arch }}" == "x64" ]; then
+          if [ "${{ matrix.os }}" == "macos-latest" ] && [ "${{ matrix.arch }}" == "x64" ]; then
             echo "output_dir=macos_x64" >> $GITHUB_OUTPUT
           elif [ "${{ matrix.os }}" == "macos-latest" ] && [ "${{ matrix.arch }}" == "arm64" ]; then
             echo "output_dir=macos_arm64" >> $GITHUB_OUTPUT
@@ -129,13 +128,28 @@ jobs:
             echo "output_dir=linux_arm" >> $GITHUB_OUTPUT
           fi
 
-      - name: Create builds directory and move binary
+      - name: Determine output directory (Windows)
+        if: matrix.os == 'windows-latest'
+        id: set-output-dir-windows
         run: |
-          New-Item -Path builds/${{ steps.set-output-dir.outputs.output_dir }} -ItemType Directory -Force
-          mv build/Release/addon_iec60870.node builds/${{ steps.set-output-dir.outputs.output_dir }}/addon_iec60870.node
+          if ("${{ matrix.arch }}" -eq "x64") {
+            echo "output_dir=win64" >> $GITHUB_OUTPUT
+          }
+
+      - name: Create builds directory and move binary (Unix)
+        if: matrix.os != 'windows-latest'
+        run: |
+          mkdir -p builds/${{ steps.set-output-dir-unix.outputs.output_dir }}
+          mv build/Release/addon_iec60870.node builds/${{ steps.set-output-dir-unix.outputs.output_dir }}/addon_iec60870.node
+
+      - name: Create builds directory and move binary (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          New-Item -Path builds/${{ steps.set-output-dir-windows.outputs.output_dir }} -ItemType Directory -Force
+          Move-Item build/Release/addon_iec60870.node builds/${{ steps.set-output-dir-windows.outputs.output_dir }}/addon_iec60870.node
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: addon_iec60870-${{ matrix.os }}-${{ matrix.arch }}
-          path: builds/${{ steps.set-output-dir.outputs.output_dir }}/addon_iec60870.node
+          path: builds/${{ steps[matrix.os == 'windows-latest' && 'set-output-dir-windows' || 'set-output-dir-unix'].outputs.output_dir }}/addon_iec60870.node
