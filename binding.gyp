@@ -22,7 +22,7 @@
       "cflags": [ "-Wall", "-Wno-unused-parameter" ],
       "cflags_cc": [ "-Wall", "-Wno-unused-parameter", "-std=c++17", "-fexceptions" ],
       "conditions": [
-        ["OS=='mac'", {
+        ["OS=='mac' and target_arch=='arm64'", {
           "xcode_settings": {
             "GCC_ENABLE_CPP_EXCEPTIONS": "YES",
             "MACOSX_DEPLOYMENT_TARGET": "11.0",
@@ -32,6 +32,18 @@
           },
           "libraries": [
             "<(module_root_dir)/lib/build/lib60870_darwin_arm64.a"
+          ]
+        }],
+        ["OS=='mac' and target_arch=='x64'", {
+          "xcode_settings": {
+            "GCC_ENABLE_CPP_EXCEPTIONS": "YES",
+            "MACOSX_DEPLOYMENT_TARGET": "11.0",
+            "ARCHS": ["x64"],
+            "OTHER_CFLAGS": [ "-Wall", "-Wno-unused-parameter" ],
+            "OTHER_CPLUSPLUSFLAGS": [ "-Wall", "-Wno-unused-parameter", "-std=c++17", "-fexceptions" ]
+          },
+          "libraries": [
+            "<(module_root_dir)/lib/build/lib60870_darwin_x64.a"
           ]
         }],
         ["OS=='linux' and target_arch=='x64'", {
