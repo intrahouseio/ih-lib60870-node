@@ -13,9 +13,9 @@ jobs:
     strategy:
       matrix:
         os:
-          - ubuntu-latest   # Linux x64, arm64, arm
-          - windows-latest  # Windows x64, ia32
-          - macos-latest    # macOS x64, arm64
+          - ubuntu-latest
+          - windows-latest
+          - macos-latest
         arch:
           - x64
         include:
@@ -41,12 +41,12 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'  # Используем 3.11, где distutils еще доступен
-          
+          python-version: '3.11'
+
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install setuptools  # Устанавливаем setuptools, который включает distutils
+          pip install setuptools
 
       - name: Install cross-compilers for Linux ARM
         if: matrix.os == 'ubuntu-latest' && (matrix.arch == 'arm' || matrix.arch == 'arm64')
@@ -55,15 +55,46 @@ jobs:
           sudo apt-get install -y gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf
           sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
 
+      - name: Install build tools for Windows
+        if: matrix.os == 'windows-latest'
+        run: |
+          choco install -y cmake
+          npm install --global windows-build-tools --vs2019
+
+      - name: Verify library presence
+        run: |
+          ls -la lib/build/ || dir lib/build
+          if [ "${{ matrix.os }}" == "ubuntu-latest" ] && [ "${{ matrix.arch }}" == "x64" ]; then
+            test -f lib/build/lib60870_linux_x64.a || (echo "Missing lib60870_linux_x64.a" && exit 1)
+          elif [ "${{ matrix.os }}" == "ubuntu-latest" ] && [ "${{ matrix.arch }}" == "arm64" ]; then
+            test -f lib/build/lib60870_linux_arm64.a || (echo "Missing lib60870_linux_arm64.a" && exit 1)
+          elif [ "${{ matrix.os }}" == "ubuntu-latest" ] && [ "${{ matrix.arch }}" == "arm" ]; then
+            test -f lib/build/lib60870_linux_arm.a || (echo "Missing lib60870_linux_arm.a" && exit 1)
+          elif [ "${{ matrix.os }}" == "macos-latest" ] && [ "${{ matrix.arch }}" == "arm64" ]; then
+            test -f lib/build/lib60870_darwin_arm64.a || (echo "Missing lib60870_darwin_arm64.a" && exit 1)
+          elif [ "${{ matrix.os }}" == "macos-latest" ] && [ "${{ matrix.arch }}" == "x64" ]; then
+            test -f lib/build/lib60870_darwin_x64.a || (echo "Missing lib60870_darwin_x64.a" && exit 1)
+          elif [ "${{ matrix.os }}" == "windows-latest" ] && [ "${{ matrix.arch }}" == "x64" ]; then
+            test -f lib/build/lib60870_win_x64.lib || (echo "Missing lib60870_win_x64.lib" && exit 1)
+          elif [ "${{ matrix.os }}" == "windows-latest" ] && [ "${{ matrix.arch }}" == "ia32" ]; then
+            test -f lib/build/lib60870_win_ia32.lib || (echo "Missing lib60870_win_ia32.lib" && exit 1)
+          fi
+
       - name: Install dependencies
         run: npm install
 
       - name: Configure build for specific architecture
         run: |
           if [ "${{ matrix.os }}" == "ubuntu-latest" ] && [ "${{ matrix.arch }}" == "arm" ]; then
-            npm run configure -- --arch=arm --target=arm-linux-gnueabihf
+            export CC=arm-linux-gnueabihf-gcc
+            export CXX=arm-linux-gnueabihf-g++
+            export LINK=arm-linux-gnueabihf-g++
+            npm run configure -- --arch=arm
           elif [ "${{ matrix.os }}" == "ubuntu-latest" ] && [ "${{ matrix.arch }}" == "arm64" ]; then
-            npm run configure -- --arch=arm64 --target=aarch64-linux-gnu
+            export CC=aarch64-linux-gnu-gcc
+            export CXX=aarch64-linux-gnu-g++
+            export LINK=aarch64-linux-gnu-g++
+            npm run configure -- --arch=arm64
           elif [ "${{ matrix.arch }}" != "x64" ]; then
             npm run configure -- --arch=${{ matrix.arch }}
           else
