@@ -87,21 +87,24 @@ jobs:
 
       - name: Configure build for specific architecture
         run: |
-          if [ "${{ matrix.os }}" == "ubuntu-latest" ] && [ "${{ matrix.arch }}" == "arm" ]; then
-            export CC=arm-linux-gnueabihf-gcc
-            export CXX=arm-linux-gnueabihf-g++
-            export LINK=arm-linux-gnueabihf-g++
+          if ("${{ matrix.os }}" -eq "ubuntu-latest" -and "${{ matrix.arch }}" -eq "arm") {
+            $env:CC="arm-linux-gnueabihf-gcc"
+            $env:CXX="arm-linux-gnueabihf-g++"
+            $env:LINK="arm-linux-gnueabihf-g++"
             npm run configure -- --arch=arm
-          elif [ "${{ matrix.os }}" == "ubuntu-latest" ] && [ "${{ matrix.arch }}" == "arm64" ]; then
-            export CC=aarch64-linux-gnu-gcc
-            export CXX=aarch64-linux-gnu-g++
-            export LINK=aarch64-linux-gnu-g++
+          }
+          elseif ("${{ matrix.os }}" -eq "ubuntu-latest" -and "${{ matrix.arch }}" -eq "arm64") {
+            $env:CC="aarch64-linux-gnu-gcc"
+            $env:CXX="aarch64-linux-gnu-g++"
+            $env:LINK="aarch64-linux-gnu-g++"
             npm run configure -- --arch=arm64
-          elif [ "${{ matrix.arch }}" != "x64" ]; then
+          }
+          elseif ("${{ matrix.arch }}" -ne "x64") {
             npm run configure -- --arch=${{ matrix.arch }}
-          else
+          }
+          else {
             npm run configure
-          fi
+          }
 
       - name: Build addon
         run: npm run build
@@ -109,19 +112,24 @@ jobs:
       - name: Determine output directory
         id: set-output-dir
         run: |
-          if [ "${{ matrix.os }}" == "windows-latest" ] && [ "${{ matrix.arch }}" == "x64" ]; then
+          if ("${{ matrix.os }}" -eq "windows-latest" -and "${{ matrix.arch }}" -eq "x64") {
             echo "output_dir=win64" >> $GITHUB_OUTPUT
-          elif [ "${{ matrix.os }}" == "macos-latest" ] && [ "${{ matrix.arch }}" == "x64" ]; then
+          }
+          elseif ("${{ matrix.os }}" -eq "macos-latest" -and "${{ matrix.arch }}" -eq "x64") {
             echo "output_dir=macos_x64" >> $GITHUB_OUTPUT
-          elif [ "${{ matrix.os }}" == "macos-latest" ] && [ "${{ matrix.arch }}" == "arm64" ]; then
+          }
+          elseif ("${{ matrix.os }}" -eq "macos-latest" -and "${{ matrix.arch }}" -eq "arm64") {
             echo "output_dir=macos_arm64" >> $GITHUB_OUTPUT
-          elif [ "${{ matrix.os }}" == "ubuntu-latest" ] && [ "${{ matrix.arch }}" == "x64" ]; then
+          }
+          elseif ("${{ matrix.os }}" -eq "ubuntu-latest" -and "${{ matrix.arch }}" -eq "x64") {
             echo "output_dir=linux_x64" >> $GITHUB_OUTPUT
-          elif [ "${{ matrix.os }}" == "ubuntu-latest" ] && [ "${{ matrix.arch }}" == "arm64" ]; then
+          }
+          elseif ("${{ matrix.os }}" -eq "ubuntu-latest" -and "${{ matrix.arch }}" -eq "arm64") {
             echo "output_dir=linux_arm64" >> $GITHUB_OUTPUT
-          elif [ "${{ matrix.os }}" == "ubuntu-latest" ] && [ "${{ matrix.arch }}" == "arm" ]; then
+          }
+          elseif ("${{ matrix.os }}" -eq "ubuntu-latest" -and "${{ matrix.arch }}" -eq "arm") {
             echo "output_dir=linux_arm" >> $GITHUB_OUTPUT
-          fi
+          }
 
       - name: Create builds directory and move binary
         run: |
