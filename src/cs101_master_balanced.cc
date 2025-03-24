@@ -18,6 +18,12 @@ extern "C"
 #include <string.h>
 }
 
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
+
 using namespace Napi;
 using namespace std;
 

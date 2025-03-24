@@ -10,6 +10,12 @@
 using namespace Napi;
 using namespace std;
 
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
+
 Napi::FunctionReference IEC101Slave::constructor;
 
 Napi::Object IEC101Slave::Init(Napi::Env env, Napi::Object exports) {
