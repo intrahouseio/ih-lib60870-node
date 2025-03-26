@@ -85,9 +85,6 @@ jobs:
         run: |
           npm run configure
 
-      - name: Build addon
-        run: npm run build
-
       - name: Determine output directory (Unix)
         if: matrix.os != 'windows-latest'
         id: set-output-dir-unix
@@ -112,18 +109,6 @@ jobs:
             echo "output_dir=win64" >> $GITHUB_OUTPUT
           }
 
-      - name: Create builds directory and move binary (Unix)
-        if: matrix.os != 'windows-latest'
-        run: |
-          mkdir -p builds/${{ steps.set-output-dir-unix.outputs.output_dir }}
-          mv build/Release/addon_iec60870.node builds/${{ steps.set-output-dir-unix.outputs.output_dir }}/addon_iec60870.node
-
-      - name: Create builds directory and move binary (Windows)
-        if: matrix.os == 'windows-latest'
-        run: |
-          New-Item -Path builds/${{ steps.set-output-dir-windows.outputs.output_dir }} -ItemType Directory -Force
-          Move-Item build/Release/addon_iec60870.node builds/${{ steps.set-output-dir-windows.outputs.output_dir }}/addon_iec60870.node
-
       - name: Prebuild binaries for Node.js 20
         run: npm run prebuild
 
@@ -133,8 +118,19 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Determine platform for artifact name
+        id: determine-platform
+        run: |
+          if [ "${{ matrix.os }}" == "ubuntu-latest" ]; then
+            echo "platform=linux" >> $GITHUB_OUTPUT
+          elif [ "${{ matrix.os }}" == "windows-latest" ]; then
+            echo "platform=win32" >> $GITHUB_OUTPUT
+          elif [ "${{ matrix.os }}" == "macos-latest" ]; then
+            echo "platform=darwin" >> $GITHUB_OUTPUT
+          fi
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: addon_iec60870-${{ matrix.os }}-${{ matrix.arch }}
-          path: builds/${{ steps[matrix.os == 'windows-latest' && 'set-output-dir-windows' || 'set-output-dir-unix'].outputs.output_dir }}/addon_iec60870.node
+          path: prebuilds/ih-lib60870-node-v1.0.9-node-v115-${{ steps.determine-platform.outputs.platform }}-${{ matrix.arch }}.tar.gz
