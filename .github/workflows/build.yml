@@ -126,6 +126,8 @@ jobs:
 
       - name: Prebuild binaries
         run: npm run prebuild
+        env:
+          NODE_PREBUILD_TARGET: "20.19.0"
 
       - name: Upload prebuilt binaries to GitHub Releases
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
