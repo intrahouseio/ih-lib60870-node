@@ -110,7 +110,18 @@ jobs:
           }
 
       - name: Prebuild binaries for Node.js 20
-        run: npm run prebuild
+        run: |
+          npm run prebuild -- --arch ${{ matrix.arch }}
+
+      - name: Create Release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ github.event.repository.default_branch == 'main' && '1.0.9' || github.sha }}
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload prebuilt binaries to GitHub Releases
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
