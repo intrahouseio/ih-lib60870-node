@@ -118,7 +118,7 @@ jobs:
       - name: Prebuild binaries for Node.js 20
         run: |
           if [ "${{ matrix.os }}" == "macos-latest" ] && [ "${{ matrix.arch }}" == "x64" ]; then
-            arch -x86_64 npm run prebuild -- --arch x64
+            arch -x86_64 npm run prebuild -- --arch x64 --macos-min-version=11.0
           elif [ "${{ matrix.os }}" == "ubuntu-latest" ] && [ "${{ matrix.arch }}" == "arm" ]; then
             export CC=arm-linux-gnueabihf-gcc
             export CXX=arm-linux-gnueabihf-g++
@@ -130,20 +130,26 @@ jobs:
 
       - name: Create Release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: v1.0.9
-          draft: false
-          prerelease: false
-          overwrite: true
+        id: create_release
+        uses: actions/create-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v1.0.9
+          release_name: Release v1.0.9
+          draft: false
+          prerelease: false
 
       - name: Upload prebuilt binaries to GitHub Releases
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: npm run prebuild-upload
+        uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: prebuilds/ih-lib60870-node-v1.0.9-node-v115-${{ steps.determine-platform.outputs.platform }}-${{ matrix.arch }}.tar.gz
+          asset_name: ih-lib60870-node-v1.0.9-node-v115-${{ steps.determine-platform.outputs.platform }}-${{ matrix.arch }}.tar.gz
+          asset_content_type: application/gzip
 
       - name: Determine platform for artifact name
         id: determine-platform
