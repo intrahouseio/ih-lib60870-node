@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
   "configure": "node-gyp configure",
-  "build": "node-gyp build",
+  "build": "node-gyp rebuild",
   "prebuild": "prebuild --all",
   "prebuild-upload": "prebuild --upload-all <GITHUB_TOKEN>",
   "install": "node install-all.js || npm run build"
