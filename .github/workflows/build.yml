@@ -188,6 +188,7 @@ jobs:
           }
         shell: pwsh
 
+
       - name: Upload prebuilt binaries to GitHub Releases
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: actions/upload-release-asset@v1
