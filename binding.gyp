@@ -67,8 +67,8 @@
           ]
         }],
         ["OS=='linux' and target_arch=='arm64'", {
-          "cflags": [ "-fPIC" ],
-          "cflags_cc": [ "-fPIC" ],
+          "cflags": [ "-fPIC", "-march=armv8-a" ],
+          "cflags_cc": [ "-fPIC", "-march=armv8-a" ],
           "libraries": [
             "<(module_root_dir)/lib/build/lib60870_linux_arm64.a",
             "-lpthread"

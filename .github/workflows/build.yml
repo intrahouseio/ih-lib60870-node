@@ -109,11 +109,17 @@ jobs:
             echo "output_dir=win64" >> $GITHUB_OUTPUT
           }
 
-      - name: Check library format
+      - name: Check library format for ARM
         if: matrix.os == 'ubuntu-latest' && matrix.arch == 'arm'
         run: |
           file lib/build/lib60870_linux_arm.a
           readelf -h lib/build/lib60870_linux_arm.a || true
+
+      - name: Check library format for ARM64
+        if: matrix.os == 'ubuntu-latest' && matrix.arch == 'arm64'
+        run: |
+          file lib/build/lib60870_linux_arm64.a
+          readelf -h lib/build/lib60870_linux_arm64.a || true
 
       - name: Prebuild binaries for Node.js 20
         run: |
@@ -124,6 +130,11 @@ jobs:
             export CXX=arm-linux-gnueabihf-g++
             export LINK=arm-linux-gnueabihf-g++
             npm run prebuild -- --arch arm
+          elif [ "${{ matrix.os }}" == "ubuntu-latest" ] && [ "${{ matrix.arch }}" == "arm64" ]; then
+            export CC=aarch64-linux-gnu-gcc
+            export CXX=aarch64-linux-gnu-g++
+            export LINK=aarch64-linux-gnu-g++
+            npm run prebuild -- --arch arm64
           else
             npm run prebuild -- --arch ${{ matrix.arch }}
           fi
@@ -133,7 +144,7 @@ jobs:
         id: create_release
         uses: actions/create-release@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
         with:
           tag_name: v1.0.9
           release_name: Release v1.0.9
@@ -144,7 +155,7 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: actions/upload-release-asset@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
           asset_path: prebuilds/ih-lib60870-node-v1.0.9-node-v115-${{ steps.determine-platform.outputs.platform }}-${{ matrix.arch }}.tar.gz
