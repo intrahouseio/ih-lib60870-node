@@ -75,8 +75,8 @@
           ]
         }],
         ["OS=='linux' and target_arch=='arm'", {
-          "cflags": [ "-fPIC" ],
-          "cflags_cc": [ "-fPIC" ],
+          "cflags": [ "-fPIC", "-march=armv7-a", "-mfloat-abi=hard" ],
+          "cflags_cc": [ "-fPIC", "-march=armv7-a", "-mfloat-abi=hard" ],
           "libraries": [
             "<(module_root_dir)/lib/build/lib60870_linux_arm.a",
             "-lpthread"

@@ -109,10 +109,21 @@ jobs:
             echo "output_dir=win64" >> $GITHUB_OUTPUT
           }
 
+      - name: Check library format
+        if: matrix.os == 'ubuntu-latest' && matrix.arch == 'arm'
+        run: |
+          file lib/build/lib60870_linux_arm.a
+          readelf -h lib/build/lib60870_linux_arm.a || true
+
       - name: Prebuild binaries for Node.js 20
         run: |
           if [ "${{ matrix.os }}" == "macos-latest" ] && [ "${{ matrix.arch }}" == "x64" ]; then
             arch -x86_64 npm run prebuild -- --arch x64
+          elif [ "${{ matrix.os }}" == "ubuntu-latest" ] && [ "${{ matrix.arch }}" == "arm" ]; then
+            export CC=arm-linux-gnueabihf-gcc
+            export CXX=arm-linux-gnueabihf-g++
+            export LINK=arm-linux-gnueabihf-g++
+            npm run prebuild -- --arch arm
           else
             npm run prebuild -- --arch ${{ matrix.arch }}
           fi
