@@ -50,7 +50,8 @@ jobs:
         if: matrix.os == 'ubuntu-latest' && (matrix.arch == 'arm' || matrix.arch == 'arm64')
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf libc6-dev-armel-cross
+          sudo apt-get install -y gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf libc6-dev-armel-cross libc6-dev-armhf-cross
+          sudo apt-get install -y gcc-arm-linux-gnueabi g++-arm-linux-gnueabi  # Добавляем компиляторы для "soft float"
           sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
 
       - name: Install build tools for Windows
@@ -65,9 +66,9 @@ jobs:
         if: matrix.os != 'windows-latest'
         run: |
           if [ "${{ matrix.os }}" == "ubuntu-latest" ] && [ "${{ matrix.arch }}" == "arm" ]; then
-            export CC=arm-linux-gnueabihf-gcc
-            export CXX=arm-linux-gnueabihf-g++
-            export LINK=arm-linux-gnueabihf-g++
+            export CC=arm-linux-gnueabi-gcc
+            export CXX=arm-linux-gnueabi-g++
+            export LINK=arm-linux-gnueabi-g++
             npm run configure -- --arch=arm
           elif [ "${{ matrix.os }}" == "ubuntu-latest" ] && [ "${{ matrix.arch }}" == "arm64" ]; then
             export CC=aarch64-linux-gnu-gcc
@@ -132,10 +133,10 @@ jobs:
           if [ "${{ matrix.os }}" == "macos-latest" ] && [ "${{ matrix.arch }}" == "x64" ]; then
             arch -x86_64 npm run prebuild -- --arch x64 --macos-min-version=11.0
           elif [ "${{ matrix.os }}" == "ubuntu-latest" ] && [ "${{ matrix.arch }}" == "arm" ]; then
-            export CC=arm-linux-gnueabihf-gcc
-            export CXX=arm-linux-gnueabihf-g++
-            export LINK=arm-linux-gnueabihf-g++
-            npm run prebuild -- --arch arm --cflags="-mfloat-abi=soft"
+            export CC=arm-linux-gnueabi-gcc
+            export CXX=arm-linux-gnueabi-g++
+            export LINK=arm-linux-gnueabi-g++
+            npm run prebuild -- --arch arm
           elif [ "${{ matrix.os }}" == "ubuntu-latest" ] && [ "${{ matrix.arch }}" == "arm64" ]; then
             export CC=aarch64-linux-gnu-gcc
             export CXX=aarch64-linux-gnu-g++
@@ -145,7 +146,6 @@ jobs:
             npm run prebuild -- --arch ${{ matrix.arch }}
           fi
         shell: bash
-
 
       - name: Prebuild binaries for Node.js 20 (Windows)
         if: matrix.os == 'windows-latest'
