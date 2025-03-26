@@ -5,7 +5,10 @@
   "main": "index.js",
   "scripts": {
     "configure": "node-gyp configure",
-    "build": "node-gyp build"   
+    "build": "node-gyp build",
+    "prebuild": "prebuild --target 16.0.0 --target 18.0.0 --target 20.0.0" ,
+    "prebuild-upload": "prebuild --upload-all",
+    "install": "node install-all.js || npm run build"   
   },
   "keywords": [
     "native",
