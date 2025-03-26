@@ -30,7 +30,7 @@
     "eslint": "8.56.0",
     "mocha": "10.2.0",
     "prebuild": "12.1.0",
-    "node-gyp": "^10.4.0"
+    "node-gyp": "^10.1.0"
   },
   "os": [
     "darwin",
