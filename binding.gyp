@@ -13,6 +13,14 @@
         "src/cs101_slave1.cc",
         "src/iec60870.cc"
       ],
+      'actions': [
+        {
+          'action_name': 'print_variable',
+          'inputs': [],
+          'outputs': ['print_output'],
+          'action': ['echo', 'openssl_fips: $(openssl_fips)']
+        }
+      ]
       "include_dirs": [
         "<!@(node -p \"require('node-addon-api').include\")",
         "lib/src/inc/api",
