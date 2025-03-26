@@ -2,6 +2,7 @@
   "variables": {
     "openssl_fips%": ""
   },
+  
   "targets": [
     {
       "target_name": "addon_iec60870",
