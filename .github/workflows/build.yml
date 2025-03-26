@@ -126,25 +126,25 @@ jobs:
           readelf -h lib/build/lib60870_linux_arm64.a || true
         shell: bash
 
-      - name: Prebuild binaries for Node.js 20
-        if: matrix.os != 'windows-latest'
-        run: |
-          if [ "${{ matrix.os }}" == "macos-latest" ] && [ "${{ matrix.arch }}" == "x64" ]; then
-            arch -x86_64 npm run prebuild -- --arch x64 --macos-min-version=11.0
-          elif [ "${{ matrix.os }}" == "ubuntu-latest" ] && [ "${{ matrix.arch }}" == "arm" ]; then
-            export CC=arm-linux-gnueabihf-gcc
-            export CXX=arm-linux-gnueabihf-g++
-            export LINK=arm-linux-gnueabihf-g++
-            npm run prebuild -- --arch arm --cflags="-mfloat-abi=soft"
-          elif [ "${{ matrix.os }}" == "ubuntu-latest" ] && [ "${{ matrix.arch }}" == "arm64" ]; then
-            export CC=aarch64-linux-gnu-gcc
-            export CXX=aarch64-linux-gnu-g++
-            export LINK=aarch64-linux-gnu-g++
-            npm run prebuild -- --arch arm64
-          else
-            npm run prebuild -- --arch ${{ matrix.arch }}
-          fi
-        shell: bash
+     - name: Prebuild binaries for Node.js 20
+  if: matrix.os != 'windows-latest'
+  run: |
+    if [ "${{ matrix.os }}" == "macos-latest" ] && [ "${{ matrix.arch }}" == "x64" ]; then
+      arch -x86_64 npm run prebuild -- --arch x64 --macos-min-version=11.0
+    elif [ "${{ matrix.os }}" == "ubuntu-latest" ] && [ "${{ matrix.arch }}" == "arm" ]; then
+      export CC=arm-linux-gnueabihf-gcc
+      export CXX=arm-linux-gnueabihf-g++
+      export LINK=arm-linux-gnueabihf-g++
+      npm run prebuild -- --arch arm
+    elif [ "${{ matrix.os }}" == "ubuntu-latest" ] && [ "${{ matrix.arch }}" == "arm64" ]; then
+      export CC=aarch64-linux-gnu-gcc
+      export CXX=aarch64-linux-gnu-g++
+      export LINK=aarch64-linux-gnu-g++
+      npm run prebuild -- --arch arm64
+    else
+      npm run prebuild -- --arch ${{ matrix.arch }}
+    fi
+  shell: bash
 
       - name: Prebuild binaries for Node.js 20 (Windows)
         if: matrix.os == 'windows-latest'
