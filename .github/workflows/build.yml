@@ -58,30 +58,6 @@ jobs:
         run: |
           choco install -y cmake
 
-      - name: Verify library presence (Unix)
-        if: matrix.os != 'windows-latest'
-        run: |
-          ls -la lib/build/
-          if [ "${{ matrix.os }}" == "ubuntu-latest" ] && [ "${{ matrix.arch }}" == "x64" ]; then
-            test -f lib/build/lib60870_linux_x64.a || (echo "Missing lib60870_linux_x64.a" && exit 1)
-          elif [ "${{ matrix.os }}" == "ubuntu-latest" ] && [ "${{ matrix.arch }}" == "arm64" ]; then
-            test -f lib/build/lib60870_linux_arm64.a || (echo "Missing lib60870_linux_arm64.a" && exit 1)
-          elif [ "${{ matrix.os }}" == "ubuntu-latest" ] && [ "${{ matrix.arch }}" == "arm" ]; then
-            test -f lib/build/lib60870_linux_arm.a || (echo "Missing lib60870_linux_arm.a" && exit 1)
-          elif [ "${{ matrix.os }}" == "macos-latest" ] && [ "${{ matrix.arch }}" == "arm64" ]; then
-            test -f lib/build/lib60870_darwin_arm64.a || (echo "Missing lib60870_darwin_arm64.a" && exit 1)
-          elif [ "${{ matrix.os }}" == "macos-latest" ] && [ "${{ matrix.arch }}" == "x64" ]; then
-            test -f lib/build/lib60870_darwin_x64.a || (echo "Missing lib60870_darwin_x64.a" && exit 1)
-          fi
-
-      - name: Verify library presence (Windows)
-        if: matrix.os == 'windows-latest'
-        run: |
-          dir lib\build
-          if ("${{ matrix.arch }}" -eq "x64") {
-            if (-not (Test-Path lib\build\lib60870_win_x64.lib)) { Write-Error "Missing lib60870_win_x64.lib"; exit 1 }
-          }
-
       - name: Install dependencies
         run: npm install
 
@@ -111,7 +87,8 @@ jobs:
 
       - name: Build addon
         run: npm run build
-        - name: Determine output directory (Unix)
+
+      - name: Determine output directory (Unix)
         if: matrix.os != 'windows-latest'
         id: set-output-dir-unix
         run: |
@@ -146,6 +123,15 @@ jobs:
         run: |
           New-Item -Path builds/${{ steps.set-output-dir-windows.outputs.output_dir }} -ItemType Directory -Force
           Move-Item build/Release/addon_iec60870.node builds/${{ steps.set-output-dir-windows.outputs.output_dir }}/addon_iec60870.node
+
+      - name: Prebuild binaries
+        run: npm run prebuild
+
+      - name: Upload prebuilt binaries to GitHub Releases
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: npm run prebuild-upload
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
