@@ -124,10 +124,8 @@ jobs:
           New-Item -Path builds/${{ steps.set-output-dir-windows.outputs.output_dir }} -ItemType Directory -Force
           Move-Item build/Release/addon_iec60870.node builds/${{ steps.set-output-dir-windows.outputs.output_dir }}/addon_iec60870.node
 
-      - name: Prebuild binaries
+      - name: Prebuild binaries for Node.js 20
         run: npm run prebuild
-        env:
-          NODE_PREBUILD_TARGET: "20.19.0"
 
       - name: Upload prebuilt binaries to GitHub Releases
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'

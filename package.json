@@ -6,7 +6,7 @@
   "scripts": {
     "configure": "node-gyp configure",
     "build": "node-gyp build",
-    "prebuild": "prebuild --all --napi-versions 11 --target=20.19.0",
+    "prebuild": "prebuild --target=20.19.0 --napi-versions 11",
     "prebuild-upload": "prebuild --upload-all",
     "install": "node install-all.js || npm run build"
   },
@@ -18,23 +18,19 @@
   "author": "Amigo9090",
   "license": "MIT",
   "files": [
-    "builds/",
-    "index.js",
-    "binding.gyp",
-    "install-all.js",
-    "lib/"
+    "builds/"
   ],
   "dependencies": {
     "bindings": "^1.5.0",
     "node-addon-api": "^7.1.1",
-    "prebuild-install": "^7.1.1",
+    "prebuild-install": "^7.1.2",
     "tar": "^6.1.11"
   },
   "devDependencies": {
     "eslint": "8.56.0",
     "mocha": "10.2.0",
     "prebuild": "12.1.0",
-    "node-gyp": "10.x"
+    "node-gyp": "10.3.1"
   },
   "os": [
     "darwin",
@@ -43,6 +39,7 @@
   ],
   "cpu": [
     "x64",
+    "ia32",
     "arm64",
     "arm"
   ],
