@@ -79,11 +79,12 @@ jobs:
           else
             npm run configure
           fi
+        shell: bash
 
       - name: Configure build for Windows
         if: matrix.os == 'windows-latest'
-        run: |
-          npm run configure
+        run: npm run configure
+        shell: pwsh
 
       - name: Determine output directory (Unix)
         if: matrix.os != 'windows-latest'
@@ -100,28 +101,33 @@ jobs:
           elif [ "${{ matrix.os }}" == "ubuntu-latest" ] && [ "${{ matrix.arch }}" == "arm" ]; then
             echo "output_dir=linux_arm" >> $GITHUB_OUTPUT
           fi
+        shell: bash
 
       - name: Determine output directory (Windows)
         if: matrix.os == 'windows-latest'
         id: set-output-dir-windows
         run: |
           if ("${{ matrix.arch }}" -eq "x64") {
-            echo "output_dir=win64" >> $GITHUB_OUTPUT
+            echo "output_dir=win64" >> $env:GITHUB_OUTPUT
           }
+        shell: pwsh
 
       - name: Check library format for ARM
         if: matrix.os == 'ubuntu-latest' && matrix.arch == 'arm'
         run: |
           file lib/build/lib60870_linux_arm.a
           readelf -h lib/build/lib60870_linux_arm.a || true
+        shell: bash
 
       - name: Check library format for ARM64
         if: matrix.os == 'ubuntu-latest' && matrix.arch == 'arm64'
         run: |
           file lib/build/lib60870_linux_arm64.a
           readelf -h lib/build/lib60870_linux_arm64.a || true
+        shell: bash
 
       - name: Prebuild binaries for Node.js 20
+        if: matrix.os != 'windows-latest'
         run: |
           if [ "${{ matrix.os }}" == "macos-latest" ] && [ "${{ matrix.arch }}" == "x64" ]; then
             arch -x86_64 npm run prebuild -- --arch x64 --macos-min-version=11.0
@@ -138,6 +144,17 @@ jobs:
           else
             npm run prebuild -- --arch ${{ matrix.arch }}
           fi
+        shell: bash
+
+      - name: Prebuild binaries for Node.js 20 (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          if ("${{ matrix.arch }}" -eq "x64") {
+            npm run prebuild -- --arch x64
+          } else {
+            npm run prebuild -- --arch ${{ matrix.arch }}
+          }
+        shell: pwsh
 
       - name: Create Release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -158,23 +175,32 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: prebuilds/ih-lib60870-node-v1.0.9-node-v115-${{ steps.determine-platform.outputs.platform }}-${{ matrix.arch }}.tar.gz
-          asset_name: ih-lib60870-node-v1.0.9-node-v115-${{ steps.determine-platform.outputs.platform }}-${{ matrix.arch }}.tar.gz
+          asset_path: prebuilds/ih-lib60870-node-v1.0.9-node-v115-${{ steps.determine-platform-unix.outputs.platform || steps.determine-platform-windows.outputs.platform }}-${{ matrix.arch }}.tar.gz
+          asset_name: ih-lib60870-node-v1.0.9-node-v115-${{ steps.determine-platform-unix.outputs.platform || steps.determine-platform-windows.outputs.platform }}-${{ matrix.arch }}.tar.gz
           asset_content_type: application/gzip
 
-      - name: Determine platform for artifact name
-        id: determine-platform
+      - name: Determine platform for artifact name (Unix)
+        if: matrix.os != 'windows-latest'
+        id: determine-platform-unix
         run: |
           if [ "${{ matrix.os }}" == "ubuntu-latest" ]; then
             echo "platform=linux" >> $GITHUB_OUTPUT
-          elif [ "${{ matrix.os }}" == "windows-latest" ]; then
-            echo "platform=win32" >> $GITHUB_OUTPUT
           elif [ "${{ matrix.os }}" == "macos-latest" ]; then
             echo "platform=darwin" >> $GITHUB_OUTPUT
           fi
+        shell: bash
+
+      - name: Determine platform for artifact name (Windows)
+        if: matrix.os == 'windows-latest'
+        id: determine-platform-windows
+        run: |
+          if ("${{ matrix.os }}" -eq "windows-latest") {
+            echo "platform=win32" >> $env:GITHUB_OUTPUT
+          }
+        shell: pwsh
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: addon_iec60870-${{ matrix.os }}-${{ matrix.arch }}
-          path: prebuilds/ih-lib60870-node-v1.0.9-node-v115-${{ steps.determine-platform.outputs.platform }}-${{ matrix.arch }}.tar.gz
+          path: prebuilds/ih-lib60870-node-v1.0.9-node-v115-${{ steps.determine-platform-unix.outputs.platform || steps.determine-platform-windows.outputs.platform }}-${{ matrix.arch }}.tar.gz
