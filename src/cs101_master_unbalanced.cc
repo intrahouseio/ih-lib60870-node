@@ -14,13 +14,8 @@ extern "C" {
 #include "hal_time.h"
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
-
-#ifdef _WIN32
-#include <windows.h>
-#else
 #include <unistd.h>
-#endif
+#include <string.h>
 }
 
 using namespace Napi;
@@ -117,10 +112,9 @@ Napi::Value IEC101MasterUnbalanced::Connect(const CallbackInfo &info) {
     int linkAddress = 1;
     int originatorAddress = 1;
     int t0 = 30;
-    int t1 = 1.171;
+    int t1 = 15;
     int t2 = 10;
     int reconnectDelay = 5;
-    int maxRetries = 10;
     int queueSize = 100;
 
     if (info.Length() > 3 && info[3].IsObject()) {
@@ -132,7 +126,6 @@ Napi::Value IEC101MasterUnbalanced::Connect(const CallbackInfo &info) {
         if (params.Has("t1")) t1 = params.Get("t1").As<Number>().Int32Value();
         if (params.Has("t2")) t2 = params.Get("t2").As<Number>().Int32Value();
         if (params.Has("reconnectDelay")) reconnectDelay = params.Get("reconnectDelay").As<Number>().Int32Value();
-        if (params.Has("maxRetries")) maxRetries = params.Get("maxRetries").As<Number>().Int32Value();
         if (params.Has("queueSize")) queueSize = params.Get("queueSize").As<Number>().Int32Value();
 
         if (linkAddress < 0 || linkAddress > 255) {
@@ -155,10 +148,6 @@ Napi::Value IEC101MasterUnbalanced::Connect(const CallbackInfo &info) {
             Napi::Error::New(env, "reconnectDelay must be at least 1 second").ThrowAsJavaScriptException();
             return env.Undefined();
         }
-        if (maxRetries < 0) {
-            Napi::Error::New(env, "maxRetries must be non-negative").ThrowAsJavaScriptException();
-            return env.Undefined();
-        }
         if (queueSize <= 0) {
             Napi::Error::New(env, "queueSize must be positive").ThrowAsJavaScriptException();
             return env.Undefined();
@@ -168,7 +157,6 @@ Napi::Value IEC101MasterUnbalanced::Connect(const CallbackInfo &info) {
     try {
         printf("Creating serial connection to %s, baudRate: %d, clientID: %s\n", portName.c_str(), baudRate, clientID.c_str());
         serialPort = SerialPort_create(portName.c_str(), baudRate, 8, 'E', 1);
-        printf("serialPort created\n");
         if (!serialPort) {
             throw runtime_error("Failed to create serial port object");
         }
@@ -183,10 +171,10 @@ Napi::Value IEC101MasterUnbalanced::Connect(const CallbackInfo &info) {
         struct sCS101_AppLayerParameters alParams;
         alParams.sizeOfTypeId = 1;
         alParams.sizeOfVSQ = 1;
-        alParams.sizeOfCOT = 1;
+        alParams.sizeOfCOT = 2;
         alParams.originatorAddress = originatorAddress;
-        alParams.sizeOfCA = 1;
-        alParams.sizeOfIOA = 2;
+        alParams.sizeOfCA = 2;
+        alParams.sizeOfIOA = 3;
         alParams.maxSizeOfASDU = 249;
 
         master = CS101_Master_createEx(serialPort, &llParams, &alParams, IEC60870_LINK_LAYER_UNBALANCED, queueSize);
@@ -200,21 +188,19 @@ Napi::Value IEC101MasterUnbalanced::Connect(const CallbackInfo &info) {
         CS101_Master_setOwnAddress(master, linkAddress);
         CS101_Master_useSlaveAddress(master, linkAddress);
 
-        printf("Connecting with params: linkAddress=%d, originatorAddress=%d, asduAddress=%d, t0=%d, t1=%d, t2=%d, reconnectDelay=%d, maxRetries=%d, queueSize=%d, clientID: %s\n",
-               linkAddress, originatorAddress, asduAddress, t0, t1, t2, reconnectDelay, maxRetries, queueSize, clientID.c_str());
+        printf("Connecting with params: linkAddress=%d, originatorAddress=%d, asduAddress=%d, t0=%d, t1=%d, t2=%d, reconnectDelay=%d, queueSize=%d, clientID: %s\n",
+               linkAddress, originatorAddress, asduAddress, t0, t1, t2, reconnectDelay, queueSize, clientID.c_str());
 
         running = true;
-        _thread = std::thread([this, portName, baudRate, linkAddress, originatorAddress, t0, t1, t2, reconnectDelay, maxRetries, queueSize] {
+        _thread = std::thread([this, portName, baudRate, linkAddress, originatorAddress, t0, t1, t2, reconnectDelay, queueSize] {
             try {
                 int retryCount = 0;
-                while (running) {
-                    printf("Attempting to connect (attempt %d/%d), clientID: %s\n", retryCount + 1, maxRetries + 1, clientID.c_str());
-                    SerialPort_open(serialPort);
+                while (running) { // Постоянное переподключение
+                    printf("Attempting to connect (attempt %d), clientID: %s\n", retryCount + 1, clientID.c_str());
                     if (SerialPort_open(serialPort)) {
                         CS101_Master_start(master);
-                        Thread_sleep(100);
-                        LinkLayerParameters params = CS101_Master_getLinkLayerParameters(master);
-                        LinkLayerState state = LL_STATE_IDLE; // Note: Replace with actual state getter if available
+                        Thread_sleep(1000);
+                        LinkLayerState state = LL_STATE_IDLE; // Замените на актуальный getter, если доступен
                         printf("Link layer state after connect: %d (0=IDLE, 1=ERROR, 2=BUSY, 3=AVAILABLE)\n", state);
                         {
                             std::lock_guard<std::mutex> lock(connMutex);
@@ -247,8 +233,7 @@ Napi::Value IEC101MasterUnbalanced::Connect(const CallbackInfo &info) {
                     while (running) {
                         CS101_Master_run(master);
                         Thread_sleep(100);
-                        LinkLayerParameters currentParams = CS101_Master_getLinkLayerParameters(master);
-                        LinkLayerState currentState = LL_STATE_IDLE; // Note: Replace with actual state getter if available
+                        LinkLayerState currentState = LL_STATE_IDLE; // Замените на актуальный getter, если доступен
                         printf("Master running, connected: %d, link state: %d\n", connected, currentState);
                         std::lock_guard<std::mutex> lock(connMutex);
                         if (!connected) break;
@@ -304,32 +289,17 @@ Napi::Value IEC101MasterUnbalanced::Connect(const CallbackInfo &info) {
 
                     if (running && !connected) {
                         retryCount++;
-                        printf("Reconnection attempt %d/%d failed, retrying in %d seconds, clientID: %s\n", retryCount, maxRetries, reconnectDelay, clientID.c_str());
+                        printf("Reconnection attempt %d failed, retrying in %d seconds, clientID: %s\n", retryCount, reconnectDelay, clientID.c_str());
                         tsfn.NonBlockingCall([=](Napi::Env env, Function jsCallback) {
                             Object eventObj = Object::New(env);
                             eventObj.Set("clientID", String::New(env, clientID.c_str()));
                             eventObj.Set("type", String::New(env, "control"));
                             eventObj.Set("event", String::New(env, "reconnecting"));
-                            eventObj.Set("reason", String::New(env, string("attempt ") + to_string(retryCount) + " of " + to_string(maxRetries)));
+                            eventObj.Set("reason", String::New(env, string("attempt ") + to_string(retryCount)));
                             std::vector<napi_value> args = {String::New(env, "data"), eventObj};
                             jsCallback.Call(args);
                         });
                         Thread_sleep(reconnectDelay * 1000);
-                    }
-
-                    if (retryCount >= maxRetries) {
-                        running = false;
-                        printf("Max reconnection attempts reached, giving up, clientID: %s\n", clientID.c_str());
-                        tsfn.NonBlockingCall([=](Napi::Env env, Function jsCallback) {
-                            Object eventObj = Object::New(env);
-                            eventObj.Set("clientID", String::New(env, clientID.c_str()));
-                            eventObj.Set("type", String::New(env, "control"));
-                            eventObj.Set("event", String::New(env, "failed"));
-                            eventObj.Set("reason", String::New(env, "max reconnection attempts reached"));
-                            std::vector<napi_value> args = {String::New(env, "data"), eventObj};
-                            jsCallback.Call(args);
-                        });
-                        break;
                     }
                 }
             } catch (const std::exception& e) {
@@ -452,17 +422,8 @@ Napi::Value IEC101MasterUnbalanced::SendCommands(const CallbackInfo &info) {
             int ioa = cmdObj.Get("ioa").As<Napi::Number>().Int32Value();
             Napi::Value value = cmdObj.Get("value");
 
-            // Извлечение bselCmd и ql с значениями по умолчанию
-            bool bselCmd = cmdObj.Has("bselCmd") && cmdObj.Get("bselCmd").IsBoolean() ? cmdObj.Get("bselCmd").As<Napi::Boolean>() : false;
-            int ql = cmdObj.Has("ql") && cmdObj.Get("ql").IsNumber() ? cmdObj.Get("ql").As<Napi::Number>().Int32Value() : 0;
-            if (ql < 0 || ql > 31) {  // Ограничение квалификатора согласно IEC 60870-5-101/104
-                Napi::RangeError::New(env, "ql must be between 0 and 31").ThrowAsJavaScriptException();
-                return env.Undefined();
-            }
-
-            printf("Sending command: typeId=%d, ioa=%d, value=%f, bselCmd=%d, ql=%d, clientID: %s\n", 
-                   typeId, ioa, value.ToNumber().DoubleValue(), bselCmd, ql, clientID.c_str());
-            CS101_ASDU asdu = CS101_ASDU_create(alParams, false, CS101_COT_ACTIVATION, 0, this->asduAddress, bselCmd, ql);
+            printf("Sending command: typeId=%d, ioa=%d, value=%f, clientID: %s\n", typeId, ioa, value.ToNumber().DoubleValue(), clientID.c_str());
+            CS101_ASDU asdu = CS101_ASDU_create(alParams, false, CS101_COT_ACTIVATION, 0, this->asduAddress, false, false);
 
             switch (typeId) {
                 case C_SC_NA_1: {
@@ -471,7 +432,7 @@ Napi::Value IEC101MasterUnbalanced::SendCommands(const CallbackInfo &info) {
                         return env.Undefined();
                     }
                     bool val = value.As<Napi::Boolean>();
-                    SingleCommand sc = SingleCommand_create(NULL, ioa, val, bselCmd, ql);
+                    SingleCommand sc = SingleCommand_create(NULL, ioa, val, false, IEC60870_QUALITY_GOOD);
                     CS101_ASDU_addInformationObject(asdu, (InformationObject)sc);
                     CS101_Master_sendASDU(master, asdu);
                     SingleCommand_destroy(sc);
@@ -487,7 +448,7 @@ Napi::Value IEC101MasterUnbalanced::SendCommands(const CallbackInfo &info) {
                         Napi::RangeError::New(env, "C_DC_NA_1 'value' must be 0-3").ThrowAsJavaScriptException();
                         return env.Undefined();
                     }
-                    DoubleCommand dc = DoubleCommand_create(NULL, ioa, val, bselCmd, ql);
+                    DoubleCommand dc = DoubleCommand_create(NULL, ioa, val, false, IEC60870_QUALITY_GOOD);
                     CS101_ASDU_addInformationObject(asdu, (InformationObject)dc);
                     CS101_Master_sendASDU(master, asdu);
                     DoubleCommand_destroy(dc);
@@ -503,7 +464,7 @@ Napi::Value IEC101MasterUnbalanced::SendCommands(const CallbackInfo &info) {
                         Napi::RangeError::New(env, "C_RC_NA_1 'value' must be 0-3").ThrowAsJavaScriptException();
                         return env.Undefined();
                     }
-                    StepCommand rc = StepCommand_create(NULL, ioa, (StepCommandValue)val, bselCmd, ql);
+                    StepCommand rc = StepCommand_create(NULL, ioa, (StepCommandValue)val, false, IEC60870_QUALITY_GOOD);
                     CS101_ASDU_addInformationObject(asdu, (InformationObject)rc);
                     CS101_Master_sendASDU(master, asdu);
                     StepCommand_destroy(rc);
@@ -519,7 +480,7 @@ Napi::Value IEC101MasterUnbalanced::SendCommands(const CallbackInfo &info) {
                         Napi::RangeError::New(env, "C_SE_NA_1 'value' must be between -1.0 and 1.0").ThrowAsJavaScriptException();
                         return env.Undefined();
                     }
-                    SetpointCommandNormalized scn = SetpointCommandNormalized_create(NULL, ioa, val, bselCmd, ql);
+                    SetpointCommandNormalized scn = SetpointCommandNormalized_create(NULL, ioa, val, false, IEC60870_QUALITY_GOOD);
                     CS101_ASDU_addInformationObject(asdu, (InformationObject)scn);
                     CS101_Master_sendASDU(master, asdu);
                     SetpointCommandNormalized_destroy(scn);
@@ -535,7 +496,7 @@ Napi::Value IEC101MasterUnbalanced::SendCommands(const CallbackInfo &info) {
                         Napi::RangeError::New(env, "C_SE_NB_1 'value' must be between -32768 and 32767").ThrowAsJavaScriptException();
                         return env.Undefined();
                     }
-                    SetpointCommandScaled scs = SetpointCommandScaled_create(NULL, ioa, val, bselCmd, ql);
+                    SetpointCommandScaled scs = SetpointCommandScaled_create(NULL, ioa, val, false, IEC60870_QUALITY_GOOD);
                     CS101_ASDU_addInformationObject(asdu, (InformationObject)scs);
                     CS101_Master_sendASDU(master, asdu);
                     SetpointCommandScaled_destroy(scs);
@@ -547,7 +508,7 @@ Napi::Value IEC101MasterUnbalanced::SendCommands(const CallbackInfo &info) {
                         return env.Undefined();
                     }
                     float val = value.As<Napi::Number>().FloatValue();
-                    SetpointCommandShort scsf = SetpointCommandShort_create(NULL, ioa, val, bselCmd, ql);
+                    SetpointCommandShort scsf = SetpointCommandShort_create(NULL, ioa, val, false, IEC60870_QUALITY_GOOD);
                     CS101_ASDU_addInformationObject(asdu, (InformationObject)scsf);
                     CS101_Master_sendASDU(master, asdu);
                     SetpointCommandShort_destroy(scsf);
@@ -572,7 +533,7 @@ Napi::Value IEC101MasterUnbalanced::SendCommands(const CallbackInfo &info) {
                     }
                     bool val = value.As<Napi::Boolean>();
                     uint64_t timestamp = cmdObj.Get("timestamp").As<Napi::Number>().Int64Value();
-                    SingleCommandWithCP56Time2a sc = SingleCommandWithCP56Time2a_create(NULL, ioa, val, bselCmd, ql, CP56Time2a_createFromMsTimestamp(NULL, timestamp));
+                    SingleCommandWithCP56Time2a sc = SingleCommandWithCP56Time2a_create(NULL, ioa, val, false, IEC60870_QUALITY_GOOD, CP56Time2a_createFromMsTimestamp(NULL, timestamp));
                     CS101_ASDU_addInformationObject(asdu, (InformationObject)sc);
                     CS101_Master_sendASDU(master, asdu);
                     SingleCommandWithCP56Time2a_destroy(sc);
@@ -589,7 +550,7 @@ Napi::Value IEC101MasterUnbalanced::SendCommands(const CallbackInfo &info) {
                         Napi::RangeError::New(env, "C_DC_TA_1 'value' must be 0-3").ThrowAsJavaScriptException();
                         return env.Undefined();
                     }
-                    DoubleCommandWithCP56Time2a dc = DoubleCommandWithCP56Time2a_create(NULL, ioa, val, bselCmd, ql, CP56Time2a_createFromMsTimestamp(NULL, timestamp));
+                    DoubleCommandWithCP56Time2a dc = DoubleCommandWithCP56Time2a_create(NULL, ioa, val, false, IEC60870_QUALITY_GOOD, CP56Time2a_createFromMsTimestamp(NULL, timestamp));
                     CS101_ASDU_addInformationObject(asdu, (InformationObject)dc);
                     CS101_Master_sendASDU(master, asdu);
                     DoubleCommandWithCP56Time2a_destroy(dc);
@@ -606,7 +567,7 @@ Napi::Value IEC101MasterUnbalanced::SendCommands(const CallbackInfo &info) {
                         Napi::RangeError::New(env, "C_RC_TA_1 'value' must be 0-3").ThrowAsJavaScriptException();
                         return env.Undefined();
                     }
-                    StepCommandWithCP56Time2a rc = StepCommandWithCP56Time2a_create(NULL, ioa, (StepCommandValue)val, bselCmd, ql, CP56Time2a_createFromMsTimestamp(NULL, timestamp));
+                    StepCommandWithCP56Time2a rc = StepCommandWithCP56Time2a_create(NULL, ioa, (StepCommandValue)val, false, IEC60870_QUALITY_GOOD, CP56Time2a_createFromMsTimestamp(NULL, timestamp));
                     CS101_ASDU_addInformationObject(asdu, (InformationObject)rc);
                     CS101_Master_sendASDU(master, asdu);
                     StepCommandWithCP56Time2a_destroy(rc);
@@ -623,7 +584,7 @@ Napi::Value IEC101MasterUnbalanced::SendCommands(const CallbackInfo &info) {
                         Napi::RangeError::New(env, "C_SE_TA_1 'value' must be between -1.0 and 1.0").ThrowAsJavaScriptException();
                         return env.Undefined();
                     }
-                    SetpointCommandNormalizedWithCP56Time2a scn = SetpointCommandNormalizedWithCP56Time2a_create(NULL, ioa, val, bselCmd, ql, CP56Time2a_createFromMsTimestamp(NULL, timestamp));
+                    SetpointCommandNormalizedWithCP56Time2a scn = SetpointCommandNormalizedWithCP56Time2a_create(NULL, ioa, val, false, IEC60870_QUALITY_GOOD, CP56Time2a_createFromMsTimestamp(NULL, timestamp));
                     CS101_ASDU_addInformationObject(asdu, (InformationObject)scn);
                     CS101_Master_sendASDU(master, asdu);
                     SetpointCommandNormalizedWithCP56Time2a_destroy(scn);
@@ -640,7 +601,7 @@ Napi::Value IEC101MasterUnbalanced::SendCommands(const CallbackInfo &info) {
                         Napi::RangeError::New(env, "C_SE_TB_1 'value' must be between -32768 and 32767").ThrowAsJavaScriptException();
                         return env.Undefined();
                     }
-                    SetpointCommandScaledWithCP56Time2a scs = SetpointCommandScaledWithCP56Time2a_create(NULL, ioa, val, bselCmd, ql, CP56Time2a_createFromMsTimestamp(NULL, timestamp));
+                    SetpointCommandScaledWithCP56Time2a scs = SetpointCommandScaledWithCP56Time2a_create(NULL, ioa, val, false, IEC60870_QUALITY_GOOD, CP56Time2a_createFromMsTimestamp(NULL, timestamp));
                     CS101_ASDU_addInformationObject(asdu, (InformationObject)scs);
                     CS101_Master_sendASDU(master, asdu);
                     SetpointCommandScaledWithCP56Time2a_destroy(scs);
@@ -653,7 +614,7 @@ Napi::Value IEC101MasterUnbalanced::SendCommands(const CallbackInfo &info) {
                     }
                     float val = value.As<Napi::Number>().FloatValue();
                     uint64_t timestamp = cmdObj.Get("timestamp").As<Napi::Number>().Int64Value();
-                    SetpointCommandShortWithCP56Time2a scsf = SetpointCommandShortWithCP56Time2a_create(NULL, ioa, val, bselCmd, ql, CP56Time2a_createFromMsTimestamp(NULL, timestamp));
+                    SetpointCommandShortWithCP56Time2a scsf = SetpointCommandShortWithCP56Time2a_create(NULL, ioa, val, false, IEC60870_QUALITY_GOOD, CP56Time2a_createFromMsTimestamp(NULL, timestamp));
                     CS101_ASDU_addInformationObject(asdu, (InformationObject)scsf);
                     CS101_Master_sendASDU(master, asdu);
                     SetpointCommandShortWithCP56Time2a_destroy(scsf);
@@ -789,8 +750,7 @@ Napi::Value IEC101MasterUnbalanced::PollSlave(const CallbackInfo &info) {
         return env.Undefined();
     }
 
-    LinkLayerParameters params = CS101_Master_getLinkLayerParameters(master);
-    LinkLayerState state = LL_STATE_IDLE; // Note: Replace with actual state getter if available
+    LinkLayerState state = LL_STATE_IDLE; // Замените на актуальный getter, если доступен
     printf("Polling slave with address %d, clientID: %s, link state: %d (0=IDLE, 1=ERROR, 2=BUSY, 3=AVAILABLE)\n", 
            slaveAddress, clientID.c_str(), state);
     CS101_Master_pollSingleSlave(master, slaveAddress);
@@ -1069,7 +1029,7 @@ bool IEC101MasterUnbalanced::RawMessageHandler(void *parameter, int address, CS1
                 }
                 break;
             default:
-                printf("Received unsupported ASDU type: %s (%i), clientID: %sn", TypeID_toString(typeID), typeID, client->clientID.c_str());
+                printf("Received unsupported ASDU type: %s (%i), clientID: %s\n", TypeID_toString(typeID), typeID, client->clientID.c_str());
                 return true;
         }
 
@@ -1113,5 +1073,3 @@ bool IEC101MasterUnbalanced::RawMessageHandler(void *parameter, int address, CS1
         return false;
     }
 }
-
-//NAPI_MODULE(NODE_GYP_MODULE_NAME, IEC101MasterUnbalanced::Init)
