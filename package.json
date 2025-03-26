@@ -5,10 +5,7 @@
   "main": "index.js",
   "scripts": {
     "configure": "node-gyp configure",
-    "build": "node-gyp build",    
-    "prebuild": " --target 16.0.0 --target 18.0.0 --target 20.0.0 -Dopenssl_fips=''",
-    "prebuild-upload": "prebuild --upload-all",
-    "install": "node install-all.js || npm run build"
+    "build": "node-gyp build"   
   },
   "keywords": [
     "native",
