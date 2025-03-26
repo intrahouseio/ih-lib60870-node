@@ -8,7 +8,6 @@ function getNativeBinding() {
 
   const bindingsMap = {
     'win32_x64': 'win64',
-   // 'win32_ia32': 'win32',
     'darwin_x64': 'macos_x64',
     'darwin_arm64': 'macos_arm64',
     'linux_x64': 'linux_x64',
@@ -23,7 +22,7 @@ function getNativeBinding() {
     throw new Error(`Unsupported platform/architecture: ${platform}/${arch}`);
   }
 
-  const bindingPath = path.join(__dirname, '..', 'builds', bindingFolder, 'addon_iec60870.node');
+  const bindingPath = path.join(__dirname, 'builds', bindingFolder, 'addon_iec60870.node');
 
   if (!fs.existsSync(bindingPath)) {
     throw new Error(`Native binding not found at ${bindingPath}`);

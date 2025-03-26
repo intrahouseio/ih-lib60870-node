@@ -1,0 +1,5 @@
+{
+  "backend": "node-gyp",
+  "download": "github",
+  "verbose": true
+}

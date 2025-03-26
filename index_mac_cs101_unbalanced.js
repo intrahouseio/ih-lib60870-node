@@ -22,9 +22,9 @@ const master = new IEC101MasterUnbalanced((event, data) => {
                 console.log('Master: Adding slave with address 2...');
                 master.addSlave(2);
                 console.log('Master: Sending interrogation command to slave 1...');
-                master.sendCommands([{ typeId: 100, ioa: 0, value: 20 }]);
+                master.sendCommands([{ typeId: 100, ioa: 0, value: 20, bselCmd: true, ql: 1  }]);
                 console.log('Master: Sending interrogation command to slave 2...');
-                master.sendCommands([{ typeId: 100, ioa: 0, value: 20 }]);
+                master.sendCommands([{ typeId: 100, ioa: 0, value: 20, bselCmd: true, ql: 1  }]);
                 console.log('Master: Polling slave 1...');
                 master.pollSlave(1);
                 console.log('Master: Polling slave 2...');
@@ -71,10 +71,10 @@ async function main() {
             if (currentStatus.connected && currentStatus.activated) {
                 console.log('Master: Polling slave 1...');
                 master.pollSlave(1);
-                master.sendCommands([{ typeId: 100, ioa: 0, value: 20 }]);
+                master.sendCommands([{ typeId: 100, ioa: 0, value: 20, bselCmd: true, ql: 1  }]);
                 console.log('Master: Polling slave 2...');
                 master.pollSlave(2);
-                master.sendCommands([{ typeId: 100, ioa: 0, value: 20 }]);
+                master.sendCommands([{ typeId: 100, ioa: 0, value: 20, bselCmd: true, ql: 1  }]);
             } else {
                 console.log('Master: Skipping poll - not connected or not activated');
             }

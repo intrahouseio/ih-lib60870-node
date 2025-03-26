@@ -5,7 +5,10 @@
   "main": "index.js",
   "scripts": {
     "configure": "node-gyp configure",
-    "build": "node-gyp build"
+    "build": "node-gyp build",
+    "prebuild": "prebuild --all",
+    "prebuild-upload": "prebuild --upload-all",
+    "install": "node install-all.js || npm run build"
   },
   "keywords": [
     "native",
@@ -14,8 +17,12 @@
   ],
   "author": "Amigo9090",
   "license": "MIT",
-  "files": [   
-    "builds/"
+  "files": [
+    "builds/",
+    "index.js",
+    "binding.gyp",
+    "install-all.js",
+    "lib/"
   ],
   "dependencies": {
     "bindings": "^1.5.0",
@@ -27,11 +34,7 @@
     "eslint": "8.56.0",
     "mocha": "10.2.0",
     "prebuild": "12.1.0",
-     "node-gyp": "8.x",
-     "bindings": "^1.5.0",
-     "node-addon-api": "^8.3.1",
-     "prebuild-install": "^7.1.1",
-     "tar": "^6.1.11"
+    "node-gyp": "10.x"
   },
   "os": [
     "darwin",
@@ -40,7 +43,6 @@
   ],
   "cpu": [
     "x64",
-    "ia32",
     "arm64",
     "arm"
   ],
