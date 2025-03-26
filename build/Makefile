@@ -40,11 +40,11 @@ all_deps :=
 
 
 
-CC.target ?= /usr/bin/clang
+CC.target ?= $(CC)
 CFLAGS.target ?= $(CPPFLAGS) $(CFLAGS)
-CXX.target ?= /usr/bin/clang++
+CXX.target ?= $(CXX)
 CXXFLAGS.target ?= $(CPPFLAGS) $(CXXFLAGS)
-LINK.target ?= /usr/bin/clang++
+LINK.target ?= $(LINK)
 LDFLAGS.target ?= $(LDFLAGS)
 AR.target ?= $(AR)
 PLI.target ?= pli
@@ -54,11 +54,11 @@ LINK ?= $(CXX.target)
 
 # TODO(evan): move all cross-compilation logic to gyp-time so we don't need
 # to replicate this environment fallback in make as well.
-CC.host ?= /usr/bin/clang
+CC.host ?= gcc
 CFLAGS.host ?= $(CPPFLAGS_host) $(CFLAGS_host)
-CXX.host ?= /usr/bin/clang++
+CXX.host ?= g++
 CXXFLAGS.host ?= $(CPPFLAGS_host) $(CXXFLAGS_host)
-LINK.host ?= /usr/bin/clang++
+LINK.host ?= $(CXX.host)
 LDFLAGS.host ?= $(LDFLAGS_host)
 AR.host ?= ar
 PLI.host ?= pli
@@ -331,8 +331,8 @@ ifeq ($(strip $(foreach prefix,$(NO_LOAD),\
 endif
 
 quiet_cmd_regen_makefile = ACTION Regenerating $@
-cmd_regen_makefile = cd $(srcdir); /opt/homebrew/lib/node_modules/node-gyp/gyp/gyp_main.py -fmake --ignore-environment "-Dlibrary=shared_library" "-Dvisibility=default" "-Dnode_root_dir=/Users/andreypetrov/.cache/node-gyp/23.9.0" "-Dnode_gyp_dir=/opt/homebrew/lib/node_modules/node-gyp" "-Dnode_lib_file=/Users/andreypetrov/.cache/node-gyp/23.9.0/$(Configuration)/node.lib" "-Dmodule_root_dir=/Users/andreypetrov/Downloads/iec60870-node" "-Dnode_engine=v8" "--depth=." "-Goutput_dir=." "--generator-output=build" -I/Users/andreypetrov/Downloads/iec60870-node/build/config.gypi -I/opt/homebrew/lib/node_modules/node-gyp/addon.gypi -I/Users/andreypetrov/.cache/node-gyp/23.9.0/include/node/common.gypi "--toplevel-dir=." binding.gyp
-Makefile: $(srcdir)/../../../../opt/homebrew/lib/node_modules/node-gyp/addon.gypi $(srcdir)/build/config.gypi $(srcdir)/../../.cache/node-gyp/23.9.0/include/node/common.gypi $(srcdir)/binding.gyp
+cmd_regen_makefile = cd $(srcdir); /opt/homebrew/lib/node_modules/node-gyp/gyp/gyp_main.py -fmake --ignore-environment "-Dlibrary=shared_library" "-Dvisibility=default" "-Dnode_root_dir=/Users/andreypetrov/Library/Caches/node-gyp/23.9.0" "-Dnode_gyp_dir=/opt/homebrew/lib/node_modules/node-gyp" "-Dnode_lib_file=/Users/andreypetrov/Library/Caches/node-gyp/23.9.0/<(target_arch)/node.lib" "-Dmodule_root_dir=/Users/andreypetrov/Downloads/addon_iec60870" "-Dnode_engine=v8" "--depth=." "-Goutput_dir=." "--generator-output=build" -I/Users/andreypetrov/Downloads/addon_iec60870/build/config.gypi -I/opt/homebrew/lib/node_modules/node-gyp/addon.gypi -I/Users/andreypetrov/Library/Caches/node-gyp/23.9.0/include/node/common.gypi "--toplevel-dir=." binding.gyp
+Makefile: $(srcdir)/../../Library/Caches/node-gyp/23.9.0/include/node/common.gypi $(srcdir)/../../../../opt/homebrew/lib/node_modules/node-gyp/addon.gypi $(srcdir)/binding.gyp $(srcdir)/build/config.gypi
 	$(call do_cmd,regen_makefile)
 
 # "all" is a concatenation of the "all" targets from all the included

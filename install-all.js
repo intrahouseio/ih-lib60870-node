@@ -4,7 +4,7 @@ const path = require('path');
 // Список поддерживаемых платформ и архитектур
 const builds = [
   { platform: 'win32', arch: 'x64' },
-  //{ platform: 'darwin', arch: 'x64' },
+  { platform: 'darwin', arch: 'x64' },
   { platform: 'darwin', arch: 'arm64' },
   { platform: 'linux', arch: 'x64' },
   { platform: 'linux', arch: 'arm64' },

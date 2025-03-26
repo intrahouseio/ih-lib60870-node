@@ -11,8 +11,6 @@ DEFS_Debug := \
 	'-D_DARWIN_USE_64_BIT_INODE=1' \
 	'-D_LARGEFILE_SOURCE' \
 	'-D_FILE_OFFSET_BITS=64' \
-	'-DOPENSSL_NO_PINSHARED' \
-	'-DOPENSSL_THREADS' \
 	'-DNAPI_CPP_EXCEPTIONS' \
 	'-DBUILDING_NODE_EXTENSION' \
 	'-DDEBUG' \
@@ -38,6 +36,8 @@ CFLAGS_C_Debug := \
 
 # Flags passed to only C++ files.
 CFLAGS_CC_Debug := \
+	-std=gnu++20 \
+	-stdlib=libc++ \
 	-fno-rtti \
 	-Wall \
 	-Wno-unused-parameter \
@@ -51,14 +51,14 @@ CFLAGS_OBJC_Debug :=
 CFLAGS_OBJCC_Debug :=
 
 INCS_Debug := \
-	-I/Users/andreypetrov/.cache/node-gyp/23.9.0/include/node \
-	-I/Users/andreypetrov/.cache/node-gyp/23.9.0/src \
-	-I/Users/andreypetrov/.cache/node-gyp/23.9.0/deps/openssl/config \
-	-I/Users/andreypetrov/.cache/node-gyp/23.9.0/deps/openssl/openssl/include \
-	-I/Users/andreypetrov/.cache/node-gyp/23.9.0/deps/uv/include \
-	-I/Users/andreypetrov/.cache/node-gyp/23.9.0/deps/zlib \
-	-I/Users/andreypetrov/.cache/node-gyp/23.9.0/deps/v8/include \
-	-I/Users/andreypetrov/Downloads/iec60870-node/node_modules/node-addon-api \
+	-I/Users/andreypetrov/Library/Caches/node-gyp/23.9.0/include/node \
+	-I/Users/andreypetrov/Library/Caches/node-gyp/23.9.0/src \
+	-I/Users/andreypetrov/Library/Caches/node-gyp/23.9.0/deps/openssl/config \
+	-I/Users/andreypetrov/Library/Caches/node-gyp/23.9.0/deps/openssl/openssl/include \
+	-I/Users/andreypetrov/Library/Caches/node-gyp/23.9.0/deps/uv/include \
+	-I/Users/andreypetrov/Library/Caches/node-gyp/23.9.0/deps/zlib \
+	-I/Users/andreypetrov/Library/Caches/node-gyp/23.9.0/deps/v8/include \
+	-I/Users/andreypetrov/Downloads/addon_iec60870/node_modules/node-addon-api \
 	-I$(srcdir)/lib/src/inc/api \
 	-I$(srcdir)/lib/src/inc/internal \
 	-I$(srcdir)/lib/src/hal/inc \
@@ -74,8 +74,6 @@ DEFS_Release := \
 	'-D_DARWIN_USE_64_BIT_INODE=1' \
 	'-D_LARGEFILE_SOURCE' \
 	'-D_FILE_OFFSET_BITS=64' \
-	'-DOPENSSL_NO_PINSHARED' \
-	'-DOPENSSL_THREADS' \
 	'-DNAPI_CPP_EXCEPTIONS' \
 	'-DBUILDING_NODE_EXTENSION'
 
@@ -84,6 +82,7 @@ CFLAGS_Release := \
 	-O3 \
 	-gdwarf-2 \
 	-fno-strict-aliasing \
+	-flto \
 	-mmacosx-version-min=11.0 \
 	-arch \
 	arm64 \
@@ -99,6 +98,8 @@ CFLAGS_C_Release := \
 
 # Flags passed to only C++ files.
 CFLAGS_CC_Release := \
+	-std=gnu++20 \
+	-stdlib=libc++ \
 	-fno-rtti \
 	-Wall \
 	-Wno-unused-parameter \
@@ -112,14 +113,14 @@ CFLAGS_OBJC_Release :=
 CFLAGS_OBJCC_Release :=
 
 INCS_Release := \
-	-I/Users/andreypetrov/.cache/node-gyp/23.9.0/include/node \
-	-I/Users/andreypetrov/.cache/node-gyp/23.9.0/src \
-	-I/Users/andreypetrov/.cache/node-gyp/23.9.0/deps/openssl/config \
-	-I/Users/andreypetrov/.cache/node-gyp/23.9.0/deps/openssl/openssl/include \
-	-I/Users/andreypetrov/.cache/node-gyp/23.9.0/deps/uv/include \
-	-I/Users/andreypetrov/.cache/node-gyp/23.9.0/deps/zlib \
-	-I/Users/andreypetrov/.cache/node-gyp/23.9.0/deps/v8/include \
-	-I/Users/andreypetrov/Downloads/iec60870-node/node_modules/node-addon-api \
+	-I/Users/andreypetrov/Library/Caches/node-gyp/23.9.0/include/node \
+	-I/Users/andreypetrov/Library/Caches/node-gyp/23.9.0/src \
+	-I/Users/andreypetrov/Library/Caches/node-gyp/23.9.0/deps/openssl/config \
+	-I/Users/andreypetrov/Library/Caches/node-gyp/23.9.0/deps/openssl/openssl/include \
+	-I/Users/andreypetrov/Library/Caches/node-gyp/23.9.0/deps/uv/include \
+	-I/Users/andreypetrov/Library/Caches/node-gyp/23.9.0/deps/zlib \
+	-I/Users/andreypetrov/Library/Caches/node-gyp/23.9.0/deps/v8/include \
+	-I/Users/andreypetrov/Downloads/addon_iec60870/node_modules/node-addon-api \
 	-I$(srcdir)/lib/src/inc/api \
 	-I$(srcdir)/lib/src/inc/internal \
 	-I$(srcdir)/lib/src/hal/inc \
@@ -166,7 +167,8 @@ LDFLAGS_Debug := \
 	-mmacosx-version-min=11.0 \
 	-arch \
 	arm64 \
-	-L$(builddir)
+	-L$(builddir) \
+	-stdlib=libc++
 
 LIBTOOLFLAGS_Debug := \
 	-undefined dynamic_lookup \
@@ -178,14 +180,15 @@ LDFLAGS_Release := \
 	-mmacosx-version-min=11.0 \
 	-arch \
 	arm64 \
-	-L$(builddir)
+	-L$(builddir) \
+	-stdlib=libc++
 
 LIBTOOLFLAGS_Release := \
 	-undefined dynamic_lookup \
 	-Wl,-search_paths_first
 
 LIBS := \
-	/Users/andreypetrov/Downloads/iec60870-node/lib/build/lib60870_darwin_arm64.a
+	/Users/andreypetrov/Downloads/addon_iec60870/lib/build/lib60870_darwin_arm64.a
 
 $(builddir)/addon_iec60870.node: GYP_LDFLAGS := $(LDFLAGS_$(BUILDTYPE))
 $(builddir)/addon_iec60870.node: LIBS := $(LIBS)
