@@ -135,7 +135,7 @@ jobs:
             export CC=arm-linux-gnueabihf-gcc
             export CXX=arm-linux-gnueabihf-g++
             export LINK=arm-linux-gnueabihf-g++
-            npm run prebuild -- --arch arm
+            npm run prebuild -- --arch arm --cflags="-march=armv7-a -mfpu=vfp -mfloat-abi=hard"
           elif [ "${{ matrix.os }}" == "ubuntu-latest" ] && [ "${{ matrix.arch }}" == "arm64" ]; then
             export CC=aarch64-linux-gnu-gcc
             export CXX=aarch64-linux-gnu-g++
