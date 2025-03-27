@@ -7,9 +7,60 @@ on:
     branches: [main]
 
 jobs:
-  build:
-    runs-on: ${{ matrix.os }}
+  create-release:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      # Клонирование репозитория
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
+      # Установка Node.js для чтения package.json
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # Извлечение версии из package.json
+      - name: Get package version
+        id: package-version
+        run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+        shell: bash
+
+      # Удаление существующего релиза (если нужно перезаписать)
+      - name: Delete existing release
+        run: |
+          gh release delete v${{ steps.package-version.outputs.version }} --yes || true
+          git push origin :refs/tags/v${{ steps.package-version.outputs.version }} || true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Создание нового релиза
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ steps.package-version.outputs.version }}
+          release_name: Release v${{ steps.package-version.outputs.version }}
+          draft: false
+          prerelease: false
+
+      # Сохранение upload_url как артефакт
+      - name: Save upload URL
+        run: echo "${{ steps.create_release.outputs.upload_url }}" > upload_url.txt
+
+      - name: Upload upload URL as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: upload-url
+          path: upload_url.txt
+
+  build-and-upload:
+    needs: create-release  # Зависит от создания релиза
+    runs-on: ${{ matrix.os }}
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     strategy:
       matrix:
         os:
@@ -28,7 +79,7 @@ jobs:
       fail-fast: false
 
     steps:
-      # Клонирование репозитория из GitHub
+      # Клонирование репозитория
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -171,24 +222,11 @@ jobs:
           }
         shell: pwsh
 
-      # Извлечение версии из package.json для тега релиза
+      # Извлечение версии из package.json
       - name: Get package version
         id: package-version
         run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
         shell: bash
-
-      # Создание релиза на GitHub с динамическим тегом
-      - name: Create Release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: v${{ steps.package-version.outputs.version }}  # Например, v1.0.15
-          release_name: Release v${{ steps.package-version.outputs.version }}
-          draft: false
-          prerelease: false
 
       # Определение платформы для имени артефакта (Unix)
       - name: Determine platform for artifact name (Unix)
@@ -212,14 +250,25 @@ jobs:
           }
         shell: pwsh
 
+      # Скачивание upload_url из артефакта
+      - name: Download upload URL
+        uses: actions/download-artifact@v4
+        with:
+          name: upload-url
+
+      # Чтение upload_url
+      - name: Read upload URL
+        id: upload-url
+        run: echo "upload_url=$(cat upload_url.txt)" >> $GITHUB_OUTPUT
+        shell: bash
+
       # Загрузка бинарных файлов в GitHub Releases
       - name: Upload prebuilt binaries to GitHub Releases
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: actions/upload-release-asset@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          upload_url: ${{ steps.upload-url.outputs.upload_url }}
           asset_path: prebuilds/ih-lib60870-node-v${{ steps.package-version.outputs.version }}-node-v115-${{ steps.determine-platform-unix.outputs.platform || steps.determine-platform-windows.outputs.platform }}-${{ matrix.arch }}.tar.gz
           asset_name: ih-lib60870-node-v${{ steps.package-version.outputs.version }}-node-v115-${{ steps.determine-platform-unix.outputs.platform || steps.determine-platform-windows.outputs.platform }}-${{ matrix.arch }}.tar.gz
           asset_content_type: application/gzip
