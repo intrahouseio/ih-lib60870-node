@@ -1,13 +1,14 @@
 {
   "name": "ih-lib60870-node",
-  "version": "1.0.16",
+  "version": "1.0.17",
   "description": "Cross-platform Node.js native addon of the iec60870 support",
   "main": "index.js",
   "scripts": {
     "configure": "node-gyp configure",
     "build": "node-gyp build",
     "prebuild": "prebuild --target=20.19.0 --napi-versions 11",
-    "prebuild-upload": "prebuild --upload-all"
+    "prebuild-upload": "prebuild --upload-all",
+    "install": "node install-all.js"
   },
   "keywords": [
     "native",
@@ -16,9 +17,7 @@
   ],
   "author": "Amigo9090",
   "license": "MIT",
-  "files": [
-    "builds/",
-    "build/",
+  "files": [  
     "index.js",
     "binding.gyp",
     "install-all.js",
