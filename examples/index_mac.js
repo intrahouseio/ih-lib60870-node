@@ -1,4 +1,4 @@
-const { IEC104Client } = require('./builds/macos_arm64/addon_iec60870');
+const { IEC104Client } = require('ih-lib60870-node');
 const util = require('util')
 const client = new IEC104Client((event, data) => {
     if (data.event === 'opened') client.sendStartDT();

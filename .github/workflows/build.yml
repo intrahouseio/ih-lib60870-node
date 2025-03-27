@@ -171,6 +171,19 @@ jobs:
           }
         shell: pwsh
 
+      # Создание релиза на GitHub (только для push в main)
+      - name: Create Release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v1.0.9
+          release_name: Release v1.0.9
+          draft: false
+          prerelease: false
+
       # Определение платформы для имени артефакта (Unix)
       - name: Determine platform for artifact name (Unix)
         if: matrix.os != 'windows-latest'
@@ -193,7 +206,19 @@ jobs:
           }
         shell: pwsh
 
-      # Загрузка артефактов в GitHub Actions (не в Releases)
+      # Загрузка бинарных файлов в GitHub Releases
+      - name: Upload prebuilt binaries to GitHub Releases
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: prebuilds/ih-lib60870-node-v1.0.9-node-v115-${{ steps.determine-platform-unix.outputs.platform || steps.determine-platform-windows.outputs.platform }}-${{ matrix.arch }}.tar.gz
+          asset_name: ih-lib60870-node-v1.0.9-node-v115-${{ steps.determine-platform-unix.outputs.platform || steps.determine-platform-windows.outputs.platform }}-${{ matrix.arch }}.tar.gz
+          asset_content_type: application/gzip
+
+      # Загрузка артефактов в GitHub Actions
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
