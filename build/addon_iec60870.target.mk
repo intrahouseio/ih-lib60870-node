@@ -2,6 +2,37 @@
 
 TOOLSET := target
 TARGET := addon_iec60870
+### Rules for action "print_variable":
+quiet_cmd_binding_gyp_addon_iec60870_target_print_variable = ACTION binding_gyp_addon_iec60870_target_print_variable $@
+cmd_binding_gyp_addon_iec60870_target_print_variable = LD_LIBRARY_PATH=$(builddir)/lib.host:$(builddir)/lib.target:$$LD_LIBRARY_PATH; export LD_LIBRARY_PATH; cd $(srcdir)/.; echo "openssl_fips: $(openssl_fips)"
+
+print_output: obj := $(abs_obj)
+print_output: builddir := $(abs_builddir)
+print_output: export BUILT_FRAMEWORKS_DIR := ${abs_builddir}
+print_output: export BUILT_PRODUCTS_DIR := ${abs_builddir}
+print_output: export CONFIGURATION := ${BUILDTYPE}
+print_output: export DYLIB_INSTALL_NAME_BASE := @rpath
+print_output: export EXECUTABLE_NAME := addon_iec60870.node
+print_output: export EXECUTABLE_PATH := addon_iec60870.node
+print_output: export FULL_PRODUCT_NAME := addon_iec60870.node
+print_output: export LD_DYLIB_INSTALL_NAME := @rpath/addon_iec60870.node
+print_output: export MACH_O_TYPE := mh_bundle
+print_output: export PRODUCT_NAME := addon_iec60870
+print_output: export PRODUCT_TYPE := com.apple.product-type.library.dynamic
+print_output: export SDKROOT := /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk
+print_output: export SRCROOT := ${abs_srcdir}/
+print_output: export SOURCE_ROOT := ${SRCROOT}
+print_output: export TARGET_BUILD_DIR := ${abs_builddir}
+print_output: export TEMP_DIR := ${TMPDIR}
+print_output: export XCODE_VERSION_ACTUAL := 1530
+print_output: TOOLSET := $(TOOLSET)
+print_output:  FORCE_DO_CMD
+	$(call do_cmd,binding_gyp_addon_iec60870_target_print_variable)
+
+all_deps += print_output
+action_binding_gyp_addon_iec60870_target_print_variable_outputs := print_output
+
+
 DEFS_Debug := \
 	'-DNODE_GYP_MODULE_NAME=addon_iec60870' \
 	'-DUSING_UV_SHARED=1' \
@@ -138,6 +169,9 @@ OBJS := \
 # Add to the list of files we specially track dependencies for.
 all_deps += $(OBJS)
 
+# Make sure our actions/rules run before any of us.
+$(OBJS): | $(action_binding_gyp_addon_iec60870_target_print_variable_outputs)
+
 # CFLAGS et al overrides must be target-local.
 # See "Target-specific Variable Values" in the GNU Make manual.
 $(OBJS): TOOLSET := $(TOOLSET)
@@ -161,6 +195,12 @@ $(obj).$(TOOLSET)/$(TARGET)/%.o: $(obj)/%.cc FORCE_DO_CMD
 
 # End of this set of suffix rules
 ### Rules for final target.
+# Build our special outputs first.
+$(builddir)/addon_iec60870.node: | $(action_binding_gyp_addon_iec60870_target_print_variable_outputs)
+
+# Preserve order dependency of special output on deps.
+$(action_binding_gyp_addon_iec60870_target_print_variable_outputs): | 
+
 LDFLAGS_Debug := \
 	-undefined dynamic_lookup \
 	-Wl,-search_paths_first \

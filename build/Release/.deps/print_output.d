@@ -1,0 +1,1 @@
+cmd_print_output := LD_LIBRARY_PATH=/Users/andreypetrov/Downloads/addon_iec60870/build/Release/lib.host:/Users/andreypetrov/Downloads/addon_iec60870/build/Release/lib.target:$$LD_LIBRARY_PATH; export LD_LIBRARY_PATH; cd ../.; echo "openssl_fips: "
