@@ -123,12 +123,12 @@ jobs:
       - name: Configure build for Unix
         if: matrix.os != 'windows-latest'
         run: |
-          if [ "${{ matrix.os }}" == "Ubuntu-latest" ] && [ "${{ matrix.arch }}" == "arm" ]; then
+          if [ "${{ matrix.os }}" == "ubuntu-latest" ] && [ "${{ matrix.arch }}" == "arm" ]; then
             export CC=arm-linux-gnueabihf-gcc
             export CXX=arm-linux-gnueabihf-g++
             export LINK=arm-linux-gnueabihf-g++
             npm run configure -- --arch=arm
-          elif [ "${{ matrix.os }}" == "Ubuntu-latest" ] && [ "${{ matrix.arch }}" == "arm64" ]; then
+          elif [ "${{ matrix.os }}" == "ubuntu-latest" ] && [ "${{ matrix.arch }}" == "arm64" ]; then
             export CC=aarch64-linux-gnu-gcc
             export CXX=aarch64-linux-gnu-g++
             export LINK=aarch64-linux-gnu-g++
@@ -155,11 +155,11 @@ jobs:
             echo "output_dir=macos_x64" >> $GITHUB_OUTPUT
           elif [ "${{ matrix.os }}" == "macos-latest" ] && [ "${{ matrix.arch }}" == "arm64" ]; then
             echo "output_dir=macos_arm64" >> $GITHUB_OUTPUT
-          elif [ "${{ matrix.os }}" == "Ubuntu-latest" ] && [ "${{ matrix.arch }}" == "x64" ]; then
+          elif [ "${{ matrix.os }}" == "ubuntu-latest" ] && [ "${{ matrix.arch }}" == "x64" ]; then
             echo "output_dir=linux_x64" >> $GITHUB_OUTPUT
-          elif [ "${{ matrix.os }}" == "Ubuntu-latest" ] && [ "${{ matrix.arch }}" == "arm64" ]; then
+          elif [ "${{ matrix.os }}" == "ubuntu-latest" ] && [ "${{ matrix.arch }}" == "arm64" ]; then
             echo "output_dir=linux_arm64" >> $GITHUB_OUTPUT
-          elif [ "${{ matrix.os }}" == "Ubuntu-latest" ] && [ "${{ matrix.arch }}" == "arm" ]; then
+          elif [ "${{ matrix.os }}" == "ubuntu-latest" ] && [ "${{ matrix.arch }}" == "arm" ]; then
             echo "output_dir=linux_arm" >> $GITHUB_OUTPUT
           fi
         shell: bash
@@ -176,7 +176,7 @@ jobs:
 
       # Проверка формата библиотеки для ARM
       - name: Check library format for ARM
-        if: matrix.os == 'Ubuntu-latest' && matrix.arch == 'arm'
+        if: matrix.os == 'ubuntu-latest' && matrix.arch == 'arm'
         run: |
           file lib/build/lib60870_linux_arm.a
           readelf -h lib/build/lib60870_linux_arm.a || true
@@ -184,7 +184,7 @@ jobs:
 
       # Проверка формата библиотеки для ARM64
       - name: Check library format for ARM64
-        if: matrix.os == 'Ubuntu-latest' && matrix.arch == 'arm64'
+        if: matrix.os == 'ubuntu-latest' && matrix.arch == 'arm64'
         run: |
           file lib/build/lib60870_linux_arm64.a
           readelf -h lib/build/lib60870_linux_arm64.a || true
@@ -196,12 +196,12 @@ jobs:
         run: |
           if [ "${{ matrix.os }}" == "macos-latest" ] && [ "${{ matrix.arch }}" == "x64" ]; then
             arch -x86_64 npm run prebuild -- --arch x64 --macos-min-version=11.0
-          elif [ "${{ matrix.os }}" == "Ubuntu-latest" ] && [ "${{ matrix.arch }}" == "arm" ]; then
+          elif [ "${{ matrix.os }}" == "ubuntu-latest" ] && [ "${{ matrix.arch }}" == "arm" ]; then
             export CC=arm-linux-gnueabihf-gcc
             export CXX=arm-linux-gnueabihf-g++
             export LINK=arm-linux-gnueabihf-g++
             npm run prebuild -- --arch arm --cflags="-march=armv7-a -mfpu=vfp -mfloat-abi=hard"
-          elif [ "${{ matrix.os }}" == "Ubuntu-latest" ] && [ "${{ matrix.arch }}" == "arm64" ]; then
+          elif [ "${{ matrix.os }}" == "ubuntu-latest" ] && [ "${{ matrix.arch }}" == "arm64" ]; then
             export CC=aarch64-linux-gnu-gcc
             export CXX=aarch64-linux-gnu-g++
             export LINK=aarch64-linux-gnu-g++
@@ -233,7 +233,7 @@ jobs:
         if: matrix.os != 'windows-latest'
         id: determine-platform-unix
         run: |
-          if [ "${{ matrix.os }}" == "Ubuntu-latest" ]; then
+          if [ "${{ matrix.os }}" == "ubuntu-latest" ]; then
             echo "platform=linux" >> $GITHUB_OUTPUT
           elif [ "${{ matrix.os }}" == "macos-latest" ]; then
             echo "platform=darwin" >> $GITHUB_OUTPUT
