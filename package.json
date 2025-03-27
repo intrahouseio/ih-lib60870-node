@@ -19,6 +19,7 @@
   "license": "MIT",
   "files": [  
     "index.js",
+    "builds/",
     "binding.gyp",
     "install-all.js",
     "lib/",

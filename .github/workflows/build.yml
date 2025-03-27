@@ -58,7 +58,7 @@ jobs:
           path: upload_url.txt
 
   build-and-upload:
-    needs: create-release  # Зависит от создания релиза
+    needs: create-release
     runs-on: ${{ matrix.os }}
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     strategy:
@@ -123,12 +123,12 @@ jobs:
       - name: Configure build for Unix
         if: matrix.os != 'windows-latest'
         run: |
-          if [ "${{ matrix.os }}" == "ubuntu-latest" ] && [ "${{ matrix.arch }}" == "arm" ]; then
+          if [ "${{ matrix.os }}" == "Ubuntu-latest" ] && [ "${{ matrix.arch }}" == "arm" ]; then
             export CC=arm-linux-gnueabihf-gcc
             export CXX=arm-linux-gnueabihf-g++
             export LINK=arm-linux-gnueabihf-g++
             npm run configure -- --arch=arm
-          elif [ "${{ matrix.os }}" == "ubuntu-latest" ] && [ "${{ matrix.arch }}" == "arm64" ]; then
+          elif [ "${{ matrix.os }}" == "Ubuntu-latest" ] && [ "${{ matrix.arch }}" == "arm64" ]; then
             export CC=aarch64-linux-gnu-gcc
             export CXX=aarch64-linux-gnu-g++
             export LINK=aarch64-linux-gnu-g++
@@ -155,11 +155,11 @@ jobs:
             echo "output_dir=macos_x64" >> $GITHUB_OUTPUT
           elif [ "${{ matrix.os }}" == "macos-latest" ] && [ "${{ matrix.arch }}" == "arm64" ]; then
             echo "output_dir=macos_arm64" >> $GITHUB_OUTPUT
-          elif [ "${{ matrix.os }}" == "ubuntu-latest" ] && [ "${{ matrix.arch }}" == "x64" ]; then
+          elif [ "${{ matrix.os }}" == "Ubuntu-latest" ] && [ "${{ matrix.arch }}" == "x64" ]; then
             echo "output_dir=linux_x64" >> $GITHUB_OUTPUT
-          elif [ "${{ matrix.os }}" == "ubuntu-latest" ] && [ "${{ matrix.arch }}" == "arm64" ]; then
+          elif [ "${{ matrix.os }}" == "Ubuntu-latest" ] && [ "${{ matrix.arch }}" == "arm64" ]; then
             echo "output_dir=linux_arm64" >> $GITHUB_OUTPUT
-          elif [ "${{ matrix.os }}" == "ubuntu-latest" ] && [ "${{ matrix.arch }}" == "arm" ]; then
+          elif [ "${{ matrix.os }}" == "Ubuntu-latest" ] && [ "${{ matrix.arch }}" == "arm" ]; then
             echo "output_dir=linux_arm" >> $GITHUB_OUTPUT
           fi
         shell: bash
@@ -170,13 +170,13 @@ jobs:
         id: set-output-dir-windows
         run: |
           if ("${{ matrix.arch }}" -eq "x64") {
-            echo "output_dir=win64" >> $env:GITHUB_OUTPUT
+            echo "output_dir=windows_x64" >> $env:GITHUB_OUTPUT
           }
         shell: pwsh
 
       # Проверка формата библиотеки для ARM
       - name: Check library format for ARM
-        if: matrix.os == 'ubuntu-latest' && matrix.arch == 'arm'
+        if: matrix.os == 'Ubuntu-latest' && matrix.arch == 'arm'
         run: |
           file lib/build/lib60870_linux_arm.a
           readelf -h lib/build/lib60870_linux_arm.a || true
@@ -184,7 +184,7 @@ jobs:
 
       # Проверка формата библиотеки для ARM64
       - name: Check library format for ARM64
-        if: matrix.os == 'ubuntu-latest' && matrix.arch == 'arm64'
+        if: matrix.os == 'Ubuntu-latest' && matrix.arch == 'arm64'
         run: |
           file lib/build/lib60870_linux_arm64.a
           readelf -h lib/build/lib60870_linux_arm64.a || true
@@ -196,12 +196,12 @@ jobs:
         run: |
           if [ "${{ matrix.os }}" == "macos-latest" ] && [ "${{ matrix.arch }}" == "x64" ]; then
             arch -x86_64 npm run prebuild -- --arch x64 --macos-min-version=11.0
-          elif [ "${{ matrix.os }}" == "ubuntu-latest" ] && [ "${{ matrix.arch }}" == "arm" ]; then
+          elif [ "${{ matrix.os }}" == "Ubuntu-latest" ] && [ "${{ matrix.arch }}" == "arm" ]; then
             export CC=arm-linux-gnueabihf-gcc
             export CXX=arm-linux-gnueabihf-g++
             export LINK=arm-linux-gnueabihf-g++
             npm run prebuild -- --arch arm --cflags="-march=armv7-a -mfpu=vfp -mfloat-abi=hard"
-          elif [ "${{ matrix.os }}" == "ubuntu-latest" ] && [ "${{ matrix.arch }}" == "arm64" ]; then
+          elif [ "${{ matrix.os }}" == "Ubuntu-latest" ] && [ "${{ matrix.arch }}" == "arm64" ]; then
             export CC=aarch64-linux-gnu-gcc
             export CXX=aarch64-linux-gnu-g++
             export LINK=aarch64-linux-gnu-g++
@@ -233,7 +233,7 @@ jobs:
         if: matrix.os != 'windows-latest'
         id: determine-platform-unix
         run: |
-          if [ "${{ matrix.os }}" == "ubuntu-latest" ]; then
+          if [ "${{ matrix.os }}" == "Ubuntu-latest" ]; then
             echo "platform=linux" >> $GITHUB_OUTPUT
           elif [ "${{ matrix.os }}" == "macos-latest" ]; then
             echo "platform=darwin" >> $GITHUB_OUTPUT
@@ -279,3 +279,94 @@ jobs:
         with:
           name: addon_iec60870-${{ matrix.os }}-${{ matrix.arch }}
           path: prebuilds/ih-lib60870-node-v${{ steps.package-version.outputs.version }}-node-v115-${{ steps.determine-platform-unix.outputs.platform || steps.determine-platform-windows.outputs.platform }}-${{ matrix.arch }}.tar.gz
+
+  update-builds-and-publish:
+    needs: build-and-upload
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      # Клонирование репозитория
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Для корректной работы с git
+
+      # Установка Node.js
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      # Извлечение версии из package.json
+      - name: Get package version
+        id: package-version
+        run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+        shell: bash
+
+      # Скачивание всех артефактов
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      # Обновление папки builds
+      - name: Update builds folder
+        run: |
+          # Очищаем папку builds, если она существует
+          rm -rf builds
+          mkdir -p builds
+
+          # Карта соответствий для именования папок
+          declare -A platform_map=(
+            ["linux-arm"]="linux_arm"
+            ["linux-arm64"]="linux_arm64"
+            ["linux-x64"]="linux_x64"
+            ["darwin-arm64"]="macos_arm64"
+            ["darwin-x64"]="macos_x64"
+            ["win32-x64"]="windows_x64"
+          )
+
+          # Перебираем все скачанные артефакты
+          for artifact in artifacts/addon_iec60870-*/*.tar.gz; do
+            # Извлекаем платформу и архитектуру из имени артефакта
+            artifact_name=$(basename $artifact)
+            platform_arch=$(echo $artifact_name | grep -oP 'node-v115-\K[^.]+' | sed 's/\.tar\.gz//')
+            
+            # Проверяем, есть ли соответствие в карте
+            if [[ -n "${platform_map[$platform_arch]}" ]]; then
+              target_dir="builds/${platform_map[$platform_arch]}"
+              mkdir -p "$target_dir"
+              
+              # Распаковываем tar.gz
+              tar -xzf "$artifact" -C "$target_dir" --strip-components=1
+              
+              # Переименовываем файл в addon_iec60870.node
+              mv "$target_dir/addon.node" "$target_dir/addon_iec60870.node" 2>/dev/null || true
+            else
+              echo "Skipping unknown platform/arch: $platform_arch"
+            fi
+          done
+
+          # Проверяем содержимое папки builds
+          ls -R builds
+        shell: bash
+
+      # Коммит и пуш изменений
+      - name: Commit and push updated builds
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add builds
+          git commit -m "Update builds with new .node binaries from release v${{ steps.package-version.outputs.version }}" || echo "No changes to commit"
+          git push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Обновление версии и публикация в npm
+      - name: Publish to npm
+        run: |
+          npm version patch -m "Release %s with updated builds"
+          npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
