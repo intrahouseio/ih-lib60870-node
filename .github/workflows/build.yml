@@ -171,16 +171,22 @@ jobs:
           }
         shell: pwsh
 
-      # Создание релиза на GitHub (только для push в main)
+      # Извлечение версии из package.json для тега релиза
+      - name: Get package version
+        id: package-version
+        run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+        shell: bash
+
+      # Создание релиза на GitHub с динамическим тегом
       - name: Create Release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         id: create_release
         uses: actions/create-release@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
         with:
-          tag_name: v1.0.9
-          release_name: Release v1.0.9
+          tag_name: v${{ steps.package-version.outputs.version }}  # Например, v1.0.15
+          release_name: Release v${{ steps.package-version.outputs.version }}
           draft: false
           prerelease: false
 
@@ -214,8 +220,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: prebuilds/ih-lib60870-node-v1.0.9-node-v115-${{ steps.determine-platform-unix.outputs.platform || steps.determine-platform-windows.outputs.platform }}-${{ matrix.arch }}.tar.gz
-          asset_name: ih-lib60870-node-v1.0.9-node-v115-${{ steps.determine-platform-unix.outputs.platform || steps.determine-platform-windows.outputs.platform }}-${{ matrix.arch }}.tar.gz
+          asset_path: prebuilds/ih-lib60870-node-v${{ steps.package-version.outputs.version }}-node-v115-${{ steps.determine-platform-unix.outputs.platform || steps.determine-platform-windows.outputs.platform }}-${{ matrix.arch }}.tar.gz
+          asset_name: ih-lib60870-node-v${{ steps.package-version.outputs.version }}-node-v115-${{ steps.determine-platform-unix.outputs.platform || steps.determine-platform-windows.outputs.platform }}-${{ matrix.arch }}.tar.gz
           asset_content_type: application/gzip
 
       # Загрузка артефактов в GitHub Actions
@@ -223,4 +229,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: addon_iec60870-${{ matrix.os }}-${{ matrix.arch }}
-          path: prebuilds/ih-lib60870-node-v1.0.9-node-v115-${{ steps.determine-platform-unix.outputs.platform || steps.determine-platform-windows.outputs.platform }}-${{ matrix.arch }}.tar.gz
+          path: prebuilds/ih-lib60870-node-v${{ steps.package-version.outputs.version }}-node-v115-${{ steps.determine-platform-unix.outputs.platform || steps.determine-platform-windows.outputs.platform }}-${{ matrix.arch }}.tar.gz
