@@ -218,7 +218,7 @@ jobs:
         run: |
           if ("${{ matrix.arch }}" -eq "x64") {
             npm run prebuild -- --arch x64
-          } else
+          } else {
             npm run prebuild -- --arch ${{ matrix.arch }}
           }
         shell: pwsh
