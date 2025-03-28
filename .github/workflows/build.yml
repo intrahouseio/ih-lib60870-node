@@ -11,37 +11,31 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
+      # Клонирование репозитория
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      # Установка Node.js для чтения package.json
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+
+      # Извлечение версии из package.json
       - name: Get package version
         id: package-version
         run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
         shell: bash
+
+      # Удаление существующего релиза (если нужно перезаписать)
       - name: Delete existing release
         run: |
           gh release delete v${{ steps.package-version.outputs.version }} --yes || true
           git push origin :refs/tags/v${{ steps.package-version.outputs.version }} || true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Create Release
-        id: create_release
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-      - name: Get package version
-        id: package-version
-        run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
-        shell: bash
-      - name: Delete existing release
-        run: |
-          gh release delete v${{ steps.package-version.outputs.version }} --yes || true
-          git push origin :refs/tags/v${{ steps.package-version.outputs.version }} || true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Создание нового релиза с помощью softprops/action-gh-release
       - name: Create Release
         id: create_release
         uses: softprops/action-gh-release@v2
@@ -53,8 +47,11 @@ jobs:
           draft: false
           prerelease: false
           generate_release_notes: true
+
+      # Сохранение upload_url как артефакт (больше не нужно, но оставим для совместимости)
       - name: Save upload URL
         run: echo "https://uploads.github.com/repos/${{ github.repository }}/releases/${{ steps.create_release.outputs.id }}/assets{?name,label}" > upload_url.txt
+
       - name: Upload upload URL as artifact
         uses: actions/upload-artifact@v4
         with:
@@ -81,33 +78,49 @@ jobs:
           - os: ubuntu-latest
             arch: arm
       fail-fast: false
+
     steps:
+      # Клонирование репозитория
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      # Установка Node.js версии 20
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+
+      # Установка Python 3.11 для работы с node-gyp
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
+      # Обновление pip и установка setuptools
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
           pip install setuptools
+
+      # Установка кросс-компиляторов для ARM на Ubuntu
       - name: Install cross-compilers for Linux ARM
         if: matrix.os == 'ubuntu-latest' && (matrix.arch == 'arm' || matrix.arch == 'arm64')
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf libc6-dev-armel-cross libc6-dev-armhf-cross          
           sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+
+      # Установка инструментов сборки для Windows (CMake)
       - name: Install build tools for Windows
         if: matrix.os == 'windows-latest'
         run: |
           choco install -y cmake
+
+      # Установка зависимостей проекта через npm
       - name: Install dependencies
         run: npm install
+
+      # Конфигурация сборки для Unix-систем
       - name: Configure build for Unix
         if: matrix.os != 'windows-latest'
         run: |
@@ -127,10 +140,14 @@ jobs:
             npm run configure
           fi
         shell: bash
+
+      # Конфигурация сборки для Windows
       - name: Configure build for Windows
         if: matrix.os == 'windows-latest'
         run: npm run configure
         shell: pwsh
+
+      # Определение выходной директории для Unix
       - name: Determine output directory (Unix)
         if: matrix.os != 'windows-latest'
         id: set-output-dir-unix
@@ -147,6 +164,8 @@ jobs:
             echo "output_dir=linux_arm" >> $GITHUB_OUTPUT
           fi
         shell: bash
+
+      # Определение выходной директории для Windows
       - name: Determine output directory (Windows)
         if: matrix.os == 'windows-latest'
         id: set-output-dir-windows
@@ -155,18 +174,24 @@ jobs:
             echo "output_dir=windows_x64" >> $env:GITHUB_OUTPUT
           }
         shell: pwsh
+
+      # Проверка формата библиотеки для ARM
       - name: Check library format for ARM
         if: matrix.os == 'ubuntu-latest' && matrix.arch == 'arm'
         run: |
           file lib/build/lib60870_linux_arm.a
           readelf -h lib/build/lib60870_linux_arm.a || true
         shell: bash
+
+      # Проверка формата библиотеки для ARM64
       - name: Check library format for ARM64
         if: matrix.os == 'ubuntu-latest' && matrix.arch == 'arm64'
         run: |
           file lib/build/lib60870_linux_arm64.a
           readelf -h lib/build/lib60870_linux_arm64.a || true
         shell: bash
+
+      # Сборка бинарных файлов для Node.js 20 (Unix)
       - name: Prebuild binaries for Node.js 20
         if: matrix.os != 'windows-latest'
         run: |
@@ -186,15 +211,21 @@ jobs:
             npm run prebuild -- --arch ${{ matrix.arch }}
           fi
         shell: bash
+
+      # Сборка бинарных файлов для Node.js 20 (Windows)
       - name: Prebuild binaries for Node.js 20 (Windows)
         if: matrix.os == 'windows-latest'
         run: |
           npm run prebuild -- --arch x64
         shell: pwsh
+
+      # Извлечение версии из package.json
       - name: Get package version
         id: package-version
         run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
         shell: bash
+
+      # Определение платформы для имени артефакта (Unix)
       - name: Determine platform for artifact name (Unix)
         if: matrix.os != 'windows-latest'
         id: determine-platform-unix
@@ -205,6 +236,8 @@ jobs:
             echo "platform=darwin" >> $GITHUB_OUTPUT
           fi
         shell: bash
+
+      # Определение платформы для имени артефакта (Windows)
       - name: Determine platform for artifact name (Windows)
         if: matrix.os == 'windows-latest'
         id: determine-platform-windows
@@ -213,6 +246,8 @@ jobs:
             echo "platform=win32" >> $env:GITHUB_OUTPUT
           }
         shell: pwsh
+
+      # Загрузка бинарных файлов в GitHub Releases с помощью softprops/action-gh-release
       - name: Upload prebuilt binaries to GitHub Releases
         uses: softprops/action-gh-release@v2
         env:
@@ -220,6 +255,8 @@ jobs:
         with:
           tag_name: v${{ steps.package-version.outputs.version }}
           files: prebuilds/ih-lib60870-node-v${{ steps.package-version.outputs.version }}-node-v115-${{ steps.determine-platform-unix.outputs.platform || steps.determine-platform-windows.outputs.platform }}-${{ matrix.arch }}.tar.gz
+
+      # Загрузка артефактов в GitHub Actions
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -231,35 +268,51 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
+      # Клонирование репозитория
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      # Установка Node.js с авторизацией для npm
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           registry-url: 'https://registry.npmjs.org'
+
+      # Отладка конфигурации npm
       - name: Debug npm config
         run: npm config list
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # Проверка авторизации в npm
       - name: Verify npm authentication
         run: npm whoami
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # Извлечение версии из package.json
       - name: Get package version
         id: package-version
         run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
         shell: bash
+
+      # Скачивание всех артефактов
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
+
+      # Обновление папки builds
       - name: Update builds folder
         run: |
+          # Очищаем папку builds, если она существует
           rm -rf builds
           mkdir -p builds
+
+          # Карта соответствий для именования папок
           declare -A platform_map=(
             ["linux-arm"]="linux_arm"
             ["linux-arm64"]="linux_arm64"
@@ -268,16 +321,25 @@ jobs:
             ["darwin-x64"]="macos_x64"
             ["win32-x64"]="windows_x64"
           )
+
+          # Перебираем все скачанные артефакты
           for artifact in artifacts/addon_iec60870-*/*.tar.gz; do
+            # Извлекаем платформу и архитектуру из имени артефакта
             artifact_name=$(basename $artifact)
             platform_arch=$(echo $artifact_name | grep -oP 'node-v115-\K[^.]+' | sed 's/\.tar\.gz//')
+            
+            # Проверяем, есть ли соответствие в карте
             if [[ -n "${platform_map[$platform_arch]}" ]]; then
               target_dir="builds/${platform_map[$platform_arch]}"
               mkdir -p "$target_dir"
+              
+              # Распаковываем tar.gz
               tar -xzf "$artifact" -C "$target_dir" --strip-components=1
+              
+              # Перемещаем addon_iec60870.node из Release в корень target_dir
               if [ -f "$target_dir/Release/addon_iec60870.node" ]; then
                 mv "$target_dir/Release/addon_iec60870.node" "$target_dir/"
-                rm -rf "$target_dir/Release"
+                rm -rf "$target_dir/Release" # Удаляем пустую папку Release
               else
                 mv "$target_dir/addon.node" "$target_dir/addon_iec60870.node" 2>/dev/null || true
               fi
@@ -285,8 +347,12 @@ jobs:
               echo "Skipping unknown platform/arch: $platform_arch"
             fi
           done
+
+          # Проверяем содержимое папки builds
           ls -R builds
         shell: bash
+
+      # Проверка содержимого папки builds
       - name: Verify builds folder
         run: |
           for dir in linux_arm linux_arm64 linux_x64 macos_arm64 macos_x64 windows_x64; do
@@ -296,6 +362,8 @@ jobs:
             fi
           done
         shell: bash
+
+      # Обновление версии и публикация в npm
       - name: Publish to npm
         run: |
           # Настраиваем Git для коммитов
