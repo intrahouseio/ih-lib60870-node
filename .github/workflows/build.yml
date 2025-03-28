@@ -218,7 +218,7 @@ jobs:
         run: |
           if ("${{ matrix.arch }}" -eq "x64") {
             npm run prebuild -- --arch x64
-          } else
+          } else {
             npm run prebuild -- --arch ${{ matrix.arch }}
           }
         shell: pwsh
@@ -276,7 +276,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 0 # Для корректной работы с git
 
       # Установка Node.js с авторизацией для npm
       - name: Setup Node.js
@@ -291,9 +291,11 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      # Проверка авторизации в npm
+      # Проверка авторизации в npm с дополнительной отладкой
       - name: Verify npm authentication
-        run: npm whoami
+        run: |
+          echo "NPM_TOKEN is set to: ${NODE_AUTH_TOKEN:0:5}..."
+          npm whoami || echo "npm whoami failed, see logs above"
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
@@ -340,13 +342,8 @@ jobs:
               # Распаковываем tar.gz
               tar -xzf "$artifact" -C "$target_dir" --strip-components=1
               
-              # Перемещаем addon_iec60870.node из Release в корень target_dir
-              if [ -f "$target_dir/Release/addon_iec60870.node" ]; then
-                mv "$target_dir/Release/addon_iec60870.node" "$target_dir/"
-                rm -rf "$target_dir/Release" # Удаляем пустую папку Release
-              else
-                mv "$target_dir/addon.node" "$target_dir/addon_iec60870.node" 2>/dev/null || true
-              fi
+              # Переименовываем файл в addon_iec60870.node
+              mv "$target_dir/addon.node" "$target_dir/addon_iec60870.node" 2>/dev/null || true
             else
               echo "Skipping unknown platform/arch: $platform_arch"
             fi
@@ -367,10 +364,17 @@ jobs:
           done
         shell: bash
 
+      # Отладка перед публикацией
+      - name: Debug before publish
+        run: |
+          echo "Preparing to publish to npm"
+          echo "Current version: $(node -p "require('./package.json').version")"
+
       # Обновление версии и публикация в npm
       - name: Publish to npm
         run: |
           npm version patch -m "Release %s with updated builds"
+          echo "New version: $(node -p "require('./package.json').version")"
           npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
