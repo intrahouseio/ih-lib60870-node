@@ -35,21 +35,22 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # Создание нового релиза
+      # Создание нового релиза с помощью softprops/action-gh-release
       - name: Create Release
         id: create_release
-        uses: actions/create-release@v1
+        uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: v${{ steps.package-version.outputs.version }}
-          release_name: Release v${{ steps.package-version.outputs.version }}
+          name: Release v${{ steps.package-version.outputs.version }}
           draft: false
           prerelease: false
+          generate_release_notes: true
 
-      # Сохранение upload_url как артефакт
+      # Сохранение upload_url как артефакт (больше не нужно, но оставим для совместимости)
       - name: Save upload URL
-        run: echo "${{ steps.create_release.outputs.upload_url }}" > upload_url.txt
+        run: echo "https://uploads.github.com/repos/${{ github.repository }}/releases/${{ steps.create_release.outputs.id }}/assets{?name,label}" > upload_url.txt
 
       - name: Upload upload URL as artifact
         uses: actions/upload-artifact@v4
@@ -217,7 +218,7 @@ jobs:
         run: |
           if ("${{ matrix.arch }}" -eq "x64") {
             npm run prebuild -- --arch x64
-          } else {
+          } else
             npm run prebuild -- --arch ${{ matrix.arch }}
           }
         shell: pwsh
@@ -250,28 +251,14 @@ jobs:
           }
         shell: pwsh
 
-      # Скачивание upload_url из артефакта
-      - name: Download upload URL
-        uses: actions/download-artifact@v4
-        with:
-          name: upload-url
-
-      # Чтение upload_url
-      - name: Read upload URL
-        id: upload-url
-        run: echo "upload_url=$(cat upload_url.txt)" >> $GITHUB_OUTPUT
-        shell: bash
-
-      # Загрузка бинарных файлов в GitHub Releases
+      # Загрузка бинарных файлов в GitHub Releases с помощью softprops/action-gh-release
       - name: Upload prebuilt binaries to GitHub Releases
-        uses: actions/upload-release-asset@v1
+        uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ steps.upload-url.outputs.upload_url }}
-          asset_path: prebuilds/ih-lib60870-node-v${{ steps.package-version.outputs.version }}-node-v115-${{ steps.determine-platform-unix.outputs.platform || steps.determine-platform-windows.outputs.platform }}-${{ matrix.arch }}.tar.gz
-          asset_name: ih-lib60870-node-v${{ steps.package-version.outputs.version }}-node-v115-${{ steps.determine-platform-unix.outputs.platform || steps.determine-platform-windows.outputs.platform }}-${{ matrix.arch }}.tar.gz
-          asset_content_type: application/gzip
+          tag_name: v${{ steps.package-version.outputs.version }}
+          files: prebuilds/ih-lib60870-node-v${{ steps.package-version.outputs.version }}-node-v115-${{ steps.determine-platform-unix.outputs.platform || steps.determine-platform-windows.outputs.platform }}-${{ matrix.arch }}.tar.gz
 
       # Загрузка артефактов в GitHub Actions
       - name: Upload artifacts
@@ -289,7 +276,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Для корректной работы с git
+          fetch-depth: 0
 
       # Установка Node.js с авторизацией для npm
       - name: Setup Node.js
@@ -298,10 +285,15 @@ jobs:
           node-version: '20'
           registry-url: 'https://registry.npmjs.org'
 
+      # Отладка конфигурации npm
+      - name: Debug npm config
+        run: npm config list
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
       # Проверка авторизации в npm
       - name: Verify npm authentication
-        run: |
-          npm whoami
+        run: npm whoami
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
