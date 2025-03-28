@@ -276,7 +276,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 0 # Для корректной работы с git
 
       # Установка Node.js с авторизацией для npm
       - name: Setup Node.js
@@ -291,9 +291,11 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      # Проверка авторизации в npm
+      # Проверка авторизации в npm с дополнительной отладкой
       - name: Verify npm authentication
-        run: npm whoami
+        run: |
+          echo "NPM_TOKEN is set to: ${NODE_AUTH_TOKEN:0:5}..."
+          npm whoami || echo "npm whoami failed, see logs above"
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
@@ -362,10 +364,17 @@ jobs:
           done
         shell: bash
 
+      # Отладка перед публикацией
+      - name: Debug before publish
+        run: |
+          echo "Preparing to publish to npm"
+          echo "Current version: $(node -p "require('./package.json').version")"
+
       # Обновление версии и публикация в npm
       - name: Publish to npm
         run: |
           npm version patch -m "Release %s with updated builds"
+          echo "New version: $(node -p "require('./package.json').version")"
           npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
