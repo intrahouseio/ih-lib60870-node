@@ -291,12 +291,19 @@ jobs:
         with:
           fetch-depth: 0 # Для корректной работы с git
 
-      # Установка Node.js
+      # Установка Node.js с авторизацией для npm
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           registry-url: 'https://registry.npmjs.org'
+
+      # Проверка авторизации в npm
+      - name: Verify npm authentication
+        run: |
+          npm whoami
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       # Извлечение версии из package.json
       - name: Get package version
@@ -352,16 +359,16 @@ jobs:
           ls -R builds
         shell: bash
 
-      # Коммит и пуш изменений
-      - name: Commit and push updated builds
+      # Проверка содержимого папки builds
+      - name: Verify builds folder
         run: |
-          git config user.name "GitHub Actions"
-          git config user.email "actions@github.com"
-          git add builds
-          git commit -m "Update builds with new .node binaries from release v${{ steps.package-version.outputs.version }}" || echo "No changes to commit"
-          git push
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          for dir in linux_arm linux_arm64 linux_x64 macos_arm64 macos_x64 windows_x64; do
+            if [ ! -f "builds/$dir/addon_iec60870.node" ]; then
+              echo "Missing addon_iec60870.node in builds/$dir"
+              exit 1
+            fi
+          done
+        shell: bash
 
       # Обновление версии и публикация в npm
       - name: Publish to npm
