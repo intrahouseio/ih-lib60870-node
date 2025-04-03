@@ -33,6 +33,7 @@ private:
     //int clientId = 0;
     std::string clientID;
     int cnt = 0;
+    int asduAddress; 
     Napi::ThreadSafeFunction tsfn;
 
     static bool RawMessageHandler(void* parameter, int address, CS101_ASDU asdu);

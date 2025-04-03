@@ -19,9 +19,7 @@
   "files": [
     "index.js",
     "builds/",
-    "binding.gyp",
-    "lib/",
-    "src/",
+    "binding.gyp",    
     ".prebuildrc"
   ],
   "dependencies": {},

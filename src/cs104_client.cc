@@ -13,8 +13,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-
-
 using namespace Napi;
 using namespace std;
 
@@ -45,6 +43,7 @@ IEC104Client::IEC104Client(const Napi::CallbackInfo& info) : Napi::ObjectWrap<IE
     Napi::Function emit = info[0].As<Napi::Function>();
     running = false;
     originatorAddress = 1;
+    asduAddress = 0; // Инициализация новой переменной
     try {
         tsfn = Napi::ThreadSafeFunction::New(
             info.Env(),
@@ -113,6 +112,7 @@ Napi::Value IEC104Client::Connect(const Napi::CallbackInfo& info) {
     if (info.Length() > 3 && info[3].IsObject()) {
         Napi::Object params = info[3].As<Napi::Object>();
         if (params.Has("originatorAddress")) originatorAddress = params.Get("originatorAddress").As<Napi::Number>().Int32Value();
+        if (params.Has("asduAddress")) asduAddress = params.Get("asduAddress").As<Napi::Number>().Int32Value(); // Добавлено извлечение asduAddress
         if (params.Has("k")) k = params.Get("k").As<Napi::Number>().Int32Value();
         if (params.Has("w")) w = params.Get("w").As<Napi::Number>().Int32Value();
         if (params.Has("t0")) t0 = params.Get("t0").As<Napi::Number>().Int32Value();
@@ -123,6 +123,10 @@ Napi::Value IEC104Client::Connect(const Napi::CallbackInfo& info) {
 
         if (originatorAddress < 0 || originatorAddress > 255) {
             Napi::Error::New(env, "originatorAddress must be 0-255").ThrowAsJavaScriptException();
+            return env.Undefined();
+        }
+        if (asduAddress < 0 || asduAddress > 65535) { // Ограничение для ASDU адреса (2 байта)
+            Napi::Error::New(env, "asduAddress must be 0-65535").ThrowAsJavaScriptException();
             return env.Undefined();
         }
         if (k <= 0 || w <= 0 || t0 <= 0 || t1 <= 0 || t2 <= 0 || t3 <= 0) {
@@ -144,6 +148,8 @@ Napi::Value IEC104Client::Connect(const Napi::CallbackInfo& info) {
 
         CS101_AppLayerParameters alParams = CS104_Connection_getAppLayerParameters(connection);
         alParams->originatorAddress = originatorAddress;
+        alParams->sizeOfCA = 2; // Устанавливаем размер адреса ASDU в 2 байта (если нужно)
+        // Здесь asduAddress будет использоваться в командах и сообщениях
 
         CS104_APCIParameters apciParams = CS104_Connection_getAPCIParameters(connection);
         apciParams->k = k;
@@ -153,8 +159,8 @@ Napi::Value IEC104Client::Connect(const Napi::CallbackInfo& info) {
         apciParams->t2 = t2;
         apciParams->t3 = t3;
 
-        printf("Connecting with params: originatorAddress=%d, k=%d, w=%d, t0=%d, t1=%d, t2=%d, t3=%d, reconnectDelay=%d, clientID: %s\n",
-               originatorAddress, k, w, t0, t1, t2, t3, reconnectDelay, clientID.c_str());
+        printf("Connecting with params: originatorAddress=%d, asduAddress=%d, k=%d, w=%d, t0=%d, t1=%d, t2=%d, t3=%d, reconnectDelay=%d, clientID: %s\n",
+               originatorAddress, asduAddress, k, w, t0, t1, t2, t3, reconnectDelay, clientID.c_str());
 
         running = true;
         _thread = std::thread([this, ip, port, k, w, t0, t1, t2, t3, reconnectDelay] {
@@ -192,6 +198,7 @@ Napi::Value IEC104Client::Connect(const Napi::CallbackInfo& info) {
                             }
                             CS101_AppLayerParameters alParams = CS104_Connection_getAppLayerParameters(connection);
                             alParams->originatorAddress = this->originatorAddress;
+                            alParams->sizeOfCA = 2; // Устанавливаем размер адреса ASDU в 2 байта
                             CS104_APCIParameters apciParams = CS104_Connection_getAPCIParameters(connection);
                             apciParams->k = k;
                             apciParams->w = w;
@@ -339,7 +346,7 @@ Napi::Value IEC104Client::SendCommands(const Napi::CallbackInfo& info) {
             }
 
             Napi::Object cmdObj = item.As<Napi::Object>();
-            if (!cmdObj.Has("typeId") || !cmdObj.Has("ioa") || !cmdObj.Has("value")) {
+            if (!cmdObj.Has("typeId") || !cmdObj.Has("ioa") || !cmdObj.Has("asdu")|| !cmdObj.Has("value")) {
                 Napi::TypeError::New(env, "Each command must have 'typeId' (number), 'ioa' (number), and 'value'").ThrowAsJavaScriptException();
                 return env.Undefined();
             }
@@ -350,12 +357,14 @@ Napi::Value IEC104Client::SendCommands(const Napi::CallbackInfo& info) {
             // Извлечение bselCmd и ql с значениями по умолчанию
             bool bselCmd = cmdObj.Has("bselCmd") && cmdObj.Get("bselCmd").IsBoolean() ? cmdObj.Get("bselCmd").As<Napi::Boolean>() : false;
             int ql = cmdObj.Has("ql") && cmdObj.Get("ql").IsNumber() ? cmdObj.Get("ql").As<Napi::Number>().Int32Value() : 0;
+            int asduAddress = cmdObj.Get("asdu").As<Napi::Number>().Int32Value();
             if (ql < 0 || ql > 31) {  // Ограничение квалификатора согласно IEC 60870-5-101/104
                 Napi::RangeError::New(env, "ql must be between 0 and 31").ThrowAsJavaScriptException();
                 return env.Undefined();
             }
 
-            CS101_ASDU asdu = CS101_ASDU_create(CS104_Connection_getAppLayerParameters(connection), false, CS101_COT_ACTIVATION, 0, originatorAddress, false, false);
+            // Используем asduAddress из класса вместо hardcoded 0
+            CS101_ASDU asdu = CS101_ASDU_create(CS104_Connection_getAppLayerParameters(connection), false, CS101_COT_ACTIVATION, asduAddress, originatorAddress, false, false);
 
             bool success = false;
             switch (typeId) {
@@ -717,6 +726,7 @@ bool IEC104Client::RawMessageHandler(void* parameter, int address, CS101_ASDU as
     IEC104Client* client = static_cast<IEC104Client*>(parameter);
     IEC60870_5_TypeID typeID = CS101_ASDU_getTypeID(asdu);
     int numberOfElements = CS101_ASDU_getNumberOfElements(asdu);
+    int receivedAsduAddress = CS101_ASDU_getCA(asdu); // Получаем адрес ASDU из полученного сообщения
 
     try {
         vector<tuple<int, double, uint8_t, uint64_t>> elements;
@@ -952,8 +962,8 @@ bool IEC104Client::RawMessageHandler(void* parameter, int address, CS101_ASDU as
         }
 
         for (const auto& [ioa, val, quality, timestamp] : elements) {
-            printf("ASDU type: %s, clientID: %s, ioa: %i, value: %f, quality: %u, timestamp: %" PRIu64 ", cnt: %i\n",
-                   TypeID_toString(typeID), client->clientID.c_str(), ioa, val, quality, timestamp, client->cnt);
+            printf("ASDU type: %s, clientID: %s, asduAddress: %d, ioa: %i, value: %f, quality: %u, timestamp: %" PRIu64 ", cnt: %i\n",
+                   TypeID_toString(typeID), client->clientID.c_str(), receivedAsduAddress, ioa, val, quality, timestamp, client->cnt);
         }
 
         client->tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
@@ -963,6 +973,7 @@ bool IEC104Client::RawMessageHandler(void* parameter, int address, CS101_ASDU as
                 Napi::Object msg = Napi::Object::New(env);
                 msg.Set("clientID", Napi::String::New(env, client->clientID.c_str()));
                 msg.Set("typeId", Napi::Number::New(env, typeID));
+                msg.Set("asdu", Napi::Number::New(env, receivedAsduAddress)); // Добавляем asduAddress в сообщение
                 msg.Set("ioa", Napi::Number::New(env, ioa));
                 msg.Set("val", Napi::Number::New(env, val));
                 msg.Set("quality", Napi::Number::New(env, quality));

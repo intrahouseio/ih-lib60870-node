@@ -1,15 +1,15 @@
-const { IEC104Client } = require('ih-lib60870-node');
+const { IEC104Client } = require('../build/Release/addon_iec60870');
 const util = require('util')
 const client = new IEC104Client((event, data) => {
     if (data.event === 'opened') client.sendStartDT();
     console.log(`Server 1 Event: ${event}, Data: ${util.inspect(data)}`);
     if (data.event === 'activated') client.sendCommands([
-        { typeId: 45, ioa: 145, value: true, bselCmd: true, ql: 1 },    // C_SC_NA_1: Включить  
-        { typeId: 46, ioa: 146, value: 1, bselCmd: 1, ql: 0 },      // C_DC_NA_1: Включить
-        { typeId: 47, ioa: 147, value: 1, bselCmd: 1, ql: 0 },      // C_RC_NA_1: Увеличить
-        { typeId: 48, ioa: 148, value: 0.001, bselCmd: 1, ql: 0 },  // C_SE_NA_1: Уставка нормализованная
-        { typeId: 49, ioa: 149, value: 5000, bselCmd: 1, ql: 0 },   // C_SE_NB_1: Уставка масштабированная
-        { typeId: 50, ioa: 150, value: 123.45 }, // C_SE_NC_1: Уставка с плавающей точкой      
+        { typeId: 45, ioa: 145, value: true, asdu: 1, bselCmd: true, ql: 1 },    // C_SC_NA_1: Включить  
+        { typeId: 46, ioa: 146, value: 1, asdu: 1, bselCmd: 1, ql: 0 },      // C_DC_NA_1: Включить
+        { typeId: 47, ioa: 147, value: 1, asdu: 1, bselCmd: 1, ql: 0 },      // C_RC_NA_1: Увеличить
+        { typeId: 48, ioa: 148, value: 0.001, asdu: 1, selCmd: 1, ql: 0 },  // C_SE_NA_1: Уставка нормализованная
+        { typeId: 49, ioa: 149, value: 5000, asdu: 1, bselCmd: 1, ql: 0 },   // C_SE_NB_1: Уставка масштабированная
+        { typeId: 50, ioa: 150, value: 123.45, asdu: 1 }, // C_SE_NC_1: Уставка с плавающей точкой      
     ]);
 });
 
