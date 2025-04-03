@@ -44,7 +44,7 @@ IEC104Client::IEC104Client(const Napi::CallbackInfo& info) : Napi::ObjectWrap<IE
 
     Napi::Function emit = info[0].As<Napi::Function>();
     running = false;
-
+    originatorAddress = 1;
     try {
         tsfn = Napi::ThreadSafeFunction::New(
             info.Env(),
@@ -101,8 +101,7 @@ Napi::Value IEC104Client::Connect(const Napi::CallbackInfo& info) {
             return env.Undefined();
         }
     }
-
-    int originatorAddress = 1;
+    
     int k = 12;
     int w = 8;
     int t0 = 30;
@@ -158,7 +157,7 @@ Napi::Value IEC104Client::Connect(const Napi::CallbackInfo& info) {
                originatorAddress, k, w, t0, t1, t2, t3, reconnectDelay, clientID.c_str());
 
         running = true;
-        _thread = std::thread([this, ip, port, originatorAddress, k, w, t0, t1, t2, t3, reconnectDelay] {
+        _thread = std::thread([this, ip, port, k, w, t0, t1, t2, t3, reconnectDelay] {
             try {
                 int retryCount = 0;
                 while (running) {  // Постоянные попытки переподключения
@@ -192,7 +191,7 @@ Napi::Value IEC104Client::Connect(const Napi::CallbackInfo& info) {
                                 throw runtime_error("Failed to recreate connection object for reconnect");
                             }
                             CS101_AppLayerParameters alParams = CS104_Connection_getAppLayerParameters(connection);
-                            alParams->originatorAddress = originatorAddress;
+                            alParams->originatorAddress = this->originatorAddress;
                             CS104_APCIParameters apciParams = CS104_Connection_getAPCIParameters(connection);
                             apciParams->k = k;
                             apciParams->w = w;
@@ -356,7 +355,7 @@ Napi::Value IEC104Client::SendCommands(const Napi::CallbackInfo& info) {
                 return env.Undefined();
             }
 
-            CS101_ASDU asdu = CS101_ASDU_create(CS104_Connection_getAppLayerParameters(connection), false, CS101_COT_ACTIVATION, 0, 1, false, false);
+            CS101_ASDU asdu = CS101_ASDU_create(CS104_Connection_getAppLayerParameters(connection), false, CS101_COT_ACTIVATION, 0, originatorAddress, false, false);
 
             bool success = false;
             switch (typeId) {
@@ -583,7 +582,7 @@ Napi::Value IEC104Client::SendCommands(const Napi::CallbackInfo& info) {
 
                 case C_IC_NA_1: {
                     CS101_ASDU_setTypeID(asdu, C_IC_NA_1);
-                    CS101_ASDU_setCOT(asdu, CS101_COT_REQUEST);
+                    CS101_ASDU_setCOT(asdu, CS101_COT_ACTIVATION);
                     InformationObject io = (InformationObject)InterrogationCommand_create(NULL, ioa, cmdObj.Get("value").As<Napi::Number>().Uint32Value());
                     CS101_ASDU_addInformationObject(asdu, io);
                     success = CS104_Connection_sendASDU(connection, asdu);

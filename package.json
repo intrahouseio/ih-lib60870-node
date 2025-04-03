@@ -25,17 +25,18 @@
     ".prebuildrc"
   ],
   "dependencies": {
-    "bindings": "^1.5.0",
-    "ih-lib60870-node": "^1.0.15",
-    "node-addon-api": "^7.1.1",
-    "prebuild-install": "^7.1.2",
-    "tar": "^6.1.11"
+    //"bindings": "^1.5.0",
+    //"ih-lib60870-node": "^1.0.15",
+   
+    //"prebuild-install": "^7.1.2",
+    //"tar": "^6.1.11"
   },
   "devDependencies": {
     "eslint": "8.56.0",
     "mocha": "10.2.0",
     "node-gyp": "^10.1.0",
-    "prebuild": "12.1.0"
+    "prebuild": "12.1.0",
+    "node-addon-api": "^7.1.1"
   },
   "os": [
     "darwin",

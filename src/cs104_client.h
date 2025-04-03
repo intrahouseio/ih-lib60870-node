@@ -22,7 +22,8 @@ public:
 
 private:
     static Napi::FunctionReference constructor;
-
+    
+    int originatorAddress;
     CS104_Connection connection;
     std::thread _thread;
     std::atomic<bool> running;

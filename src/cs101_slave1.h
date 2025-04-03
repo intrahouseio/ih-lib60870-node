@@ -25,8 +25,9 @@ public:
     virtual ~IEC101Slave();
 
 private:
-    static Napi::FunctionReference constructor;
 
+    static Napi::FunctionReference constructor;
+   
     CS101_Slave slave;
     SerialPort serialPort;
     std::thread _thread;

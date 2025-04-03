@@ -111,10 +111,10 @@ jobs:
           sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
 
       # Установка инструментов сборки для Windows (CMake)
-      - name: Install build tools for Windows
-        if: matrix.os == 'windows-latest'
-        run: |
-          choco install -y cmake
+      # - name: Install build tools for Windows
+      #  if: matrix.os == 'windows-latest'
+      #  run: |
+      #    choco install -y cmake
 
       # Установка зависимостей проекта через npm
       - name: Install dependencies
