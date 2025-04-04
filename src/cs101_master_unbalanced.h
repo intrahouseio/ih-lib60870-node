@@ -35,6 +35,8 @@ private:
     int cnt = 0;
     Napi::ThreadSafeFunction tsfn;
     int asduAddress = 1;
+     int originatorAddress;
+   bool usingPrimaryPort;
 
     static bool RawMessageHandler(void *parameter, int address, CS101_ASDU asdu);
     static void LinkLayerStateChanged(void *parameter, int address, LinkLayerState state);

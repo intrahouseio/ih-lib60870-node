@@ -1,6 +1,6 @@
 {
   "name": "ih-lib60870-node",
-  "version": "1.0.37",
+  "version": "1.0.38",
   "description": "Cross-platform Node.js native addon of the iec60870 support",
   "main": "index.js",
   "scripts": {
@@ -19,7 +19,8 @@
   "files": [
     "index.js",
     "builds/",
-    "binding.gyp",
+    "examples/",     
+    "binding.gyp",    
     ".prebuildrc"
   ],
   "dependencies": {},

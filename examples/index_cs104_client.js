@@ -13,15 +13,20 @@ const client = new IEC104Client((event, data) => {
     ]);
 });
 
-const client2 = new IEC104Client((event, data) => {
+/*const client2 = new IEC104Client((event, data) => {
     if (data.event === 'opened') client2.sendStartDT();
     console.log(`Server 2 Event: ${event}, Data: ${util.inspect(data)}`);
-});
+});*/
 
 async function main() {
     const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-    client.connect('192.168.0.102', 2404, 'client number 1', {
+    client.connect({
+        ip: "192.168.0.10",
+        port: 2404,
+        clientID: "client1",
+        ipReserve: "192.168.0.11",
+        reconnectDelay: 2,           // Задержка переподключения в секундах
         originatorAddress: 1,
         k: 12,
         w: 8,
@@ -33,7 +38,10 @@ async function main() {
         maxRetries: 5
     });
 
-    client2.connect('192.168.0.10', 2404, 'client number 2', {
+    /*client2.connect({
+        ip: "192.168.0.102",
+        port: 2404,
+        clientID: "client2",
         originatorAddress: 1,
         k: 12,
         w: 8,
@@ -43,7 +51,7 @@ async function main() {
         t3: 20,
         reconnectDelay: 2,
         maxRetries: 5
-    });
+    });*/
 
     // Ждём некоторое время (опционально, если нужно синхронизировать действия)
     await sleep(1000);

@@ -1,3 +1,9 @@
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
+
 #include "cs104_server.h"
 #include <inttypes.h>
 #include <stdexcept>
@@ -5,7 +11,6 @@
 #include <map>
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
 #include <string.h>
 
 using namespace Napi;
@@ -259,10 +264,26 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
 
             int typeId = cmdObj.Get("typeId").As<Napi::Number>().Int32Value();
             int ioa = cmdObj.Get("ioa").As<Napi::Number>().Int32Value();
+
+            // Извлечение дополнительных параметров bselCmd и ql
+            bool bselCmd = false; // По умолчанию: исполнение (false), а не выбор (true)
+            int ql = 0;           // По умолчанию: без импульса
+            if (cmdObj.Has("bselCmd") && cmdObj.Get("bselCmd").IsBoolean()) {
+                bselCmd = cmdObj.Get("bselCmd").As<Napi::Boolean>();
+            }
+            if (cmdObj.Has("ql") && cmdObj.Get("ql").IsNumber()) {
+                ql = cmdObj.Get("ql").As<Napi::Number>().Int32Value();
+                if (ql < 0 || ql > 31) { // QOC обычно 0-31 согласно IEC 60870-5-101/104
+                    Napi::RangeError::New(env, "ql must be between 0 and 31").ThrowAsJavaScriptException();
+                    return env.Undefined();
+                }
+            }
+
             CS101_ASDU asdu = CS101_ASDU_create(CS104_Slave_getAppLayerParameters(server), false, CS101_COT_SPONTANEOUS, 0, 1, false, false);
 
             bool success = false;
             switch (typeId) {
+                // Существующие типы мониторинга
                 case M_SP_NA_1: {
                     if (!cmdObj.Get("value").IsBoolean()) {
                         Napi::TypeError::New(env, "M_SP_NA_1 requires 'value' as boolean").ThrowAsJavaScriptException();
@@ -275,7 +296,6 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     SinglePointInformation_destroy(sp);
                     break;
                 }
-
                 case M_DP_NA_1: {
                     if (!cmdObj.Get("value").IsNumber()) {
                         Napi::TypeError::New(env, "M_DP_NA_1 requires 'value' as number (0-3)").ThrowAsJavaScriptException();
@@ -292,7 +312,6 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     DoublePointInformation_destroy(dp);
                     break;
                 }
-
                 case M_ST_NA_1: {
                     if (!cmdObj.Get("value").IsNumber()) {
                         Napi::TypeError::New(env, "M_ST_NA_1 requires 'value' as number (-64 to 63)").ThrowAsJavaScriptException();
@@ -309,7 +328,6 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     StepPositionInformation_destroy(st);
                     break;
                 }
-
                 case M_BO_NA_1: {
                     if (!cmdObj.Get("value").IsNumber()) {
                         Napi::TypeError::New(env, "M_BO_NA_1 requires 'value' as number (32-bit unsigned integer)").ThrowAsJavaScriptException();
@@ -322,7 +340,6 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     BitString32_destroy(bo);
                     break;
                 }
-
                 case M_ME_NA_1: {
                     if (!cmdObj.Get("value").IsNumber()) {
                         Napi::TypeError::New(env, "M_ME_NA_1 requires 'value' as number (-1.0 to 1.0)").ThrowAsJavaScriptException();
@@ -339,7 +356,6 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     MeasuredValueNormalized_destroy(mn);
                     break;
                 }
-
                 case M_ME_NB_1: {
                     if (!cmdObj.Get("value").IsNumber()) {
                         Napi::TypeError::New(env, "M_ME_NB_1 requires 'value' as number (-32768 to 32767)").ThrowAsJavaScriptException();
@@ -356,7 +372,6 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     MeasuredValueScaled_destroy(ms);
                     break;
                 }
-
                 case M_ME_NC_1: {
                     if (!cmdObj.Get("value").IsNumber()) {
                         Napi::TypeError::New(env, "M_ME_NC_1 requires 'value' as number").ThrowAsJavaScriptException();
@@ -369,7 +384,6 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     MeasuredValueShort_destroy(mc);
                     break;
                 }
-
                 case M_IT_NA_1: {
                     if (!cmdObj.Get("value").IsNumber()) {
                         Napi::TypeError::New(env, "M_IT_NA_1 requires 'value' as number").ThrowAsJavaScriptException();
@@ -384,7 +398,6 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     BinaryCounterReading_destroy(bcr);
                     break;
                 }
-
                 case M_SP_TB_1: {
                     if (!cmdObj.Get("value").IsBoolean() || !cmdObj.Has("timestamp") || !cmdObj.Get("timestamp").IsNumber()) {
                         Napi::TypeError::New(env, "M_SP_TB_1 requires 'value' (boolean) and 'timestamp' (number)").ThrowAsJavaScriptException();
@@ -398,7 +411,6 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     SinglePointWithCP56Time2a_destroy(sp);
                     break;
                 }
-
                 case M_DP_TB_1: {
                     if (!cmdObj.Get("value").IsNumber() || !cmdObj.Has("timestamp") || !cmdObj.Get("timestamp").IsNumber()) {
                         Napi::TypeError::New(env, "M_DP_TB_1 requires 'value' (number 0-3) and 'timestamp' (number)").ThrowAsJavaScriptException();
@@ -416,7 +428,6 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     DoublePointWithCP56Time2a_destroy(dp);
                     break;
                 }
-
                 case M_ST_TB_1: {
                     if (!cmdObj.Get("value").IsNumber() || !cmdObj.Has("timestamp") || !cmdObj.Get("timestamp").IsNumber()) {
                         Napi::TypeError::New(env, "M_ST_TB_1 requires 'value' (number -64 to 63) and 'timestamp' (number)").ThrowAsJavaScriptException();
@@ -434,7 +445,6 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     StepPositionWithCP56Time2a_destroy(st);
                     break;
                 }
-
                 case M_BO_TB_1: {
                     if (!cmdObj.Get("value").IsNumber() || !cmdObj.Has("timestamp") || !cmdObj.Get("timestamp").IsNumber()) {
                         Napi::TypeError::New(env, "M_BO_TB_1 requires 'value' (32-bit number) and 'timestamp' (number)").ThrowAsJavaScriptException();
@@ -448,7 +458,6 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     Bitstring32WithCP56Time2a_destroy(bo);
                     break;
                 }
-
                 case M_ME_TD_1: {
                     if (!cmdObj.Get("value").IsNumber() || !cmdObj.Has("timestamp") || !cmdObj.Get("timestamp").IsNumber()) {
                         Napi::TypeError::New(env, "M_ME_TD_1 requires 'value' (number -1.0 to 1.0) and 'timestamp' (number)").ThrowAsJavaScriptException();
@@ -466,7 +475,6 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     MeasuredValueNormalizedWithCP56Time2a_destroy(mn);
                     break;
                 }
-
                 case M_ME_TE_1: {
                     if (!cmdObj.Get("value").IsNumber() || !cmdObj.Has("timestamp") || !cmdObj.Get("timestamp").IsNumber()) {
                         Napi::TypeError::New(env, "M_ME_TE_1 requires 'value' (number -32768 to 32767) and 'timestamp' (number)").ThrowAsJavaScriptException();
@@ -484,7 +492,6 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     MeasuredValueScaledWithCP56Time2a_destroy(ms);
                     break;
                 }
-
                 case M_ME_TF_1: {
                     if (!cmdObj.Get("value").IsNumber() || !cmdObj.Has("timestamp") || !cmdObj.Get("timestamp").IsNumber()) {
                         Napi::TypeError::New(env, "M_ME_TF_1 requires 'value' (number) and 'timestamp' (number)").ThrowAsJavaScriptException();
@@ -498,7 +505,6 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     MeasuredValueShortWithCP56Time2a_destroy(mc);
                     break;
                 }
-
                 case M_IT_TB_1: {
                     if (!cmdObj.Get("value").IsNumber() || !cmdObj.Has("timestamp") || !cmdObj.Get("timestamp").IsNumber()) {
                         Napi::TypeError::New(env, "M_IT_TB_1 requires 'value' (number) and 'timestamp' (number)").ThrowAsJavaScriptException();
@@ -515,6 +521,236 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     break;
                 }
 
+                // Новые типы команд управления
+                case C_SC_NA_1: { // Одиночная команда
+                    if (!cmdObj.Get("value").IsBoolean()) {
+                        Napi::TypeError::New(env, "C_SC_NA_1 requires 'value' as boolean").ThrowAsJavaScriptException();
+                        return env.Undefined();
+                    }
+                    bool value = cmdObj.Get("value").As<Napi::Boolean>();
+                    SingleCommand sc = SingleCommand_create(NULL, ioa, value, bselCmd, ql);
+                    CS101_ASDU_addInformationObject(asdu, (InformationObject)sc);
+                    success = IMasterConnection_sendASDU(targetConnection, asdu);
+                    SingleCommand_destroy(sc);
+                    break;
+                }
+                case C_DC_NA_1: { // Двойная команда
+                    if (!cmdObj.Get("value").IsNumber()) {
+                        Napi::TypeError::New(env, "C_DC_NA_1 requires 'value' as number (0-3)").ThrowAsJavaScriptException();
+                        return env.Undefined();
+                    }
+                    int value = cmdObj.Get("value").As<Napi::Number>().Int32Value();
+                    if (value < 0 || value > 3) {
+                        Napi::RangeError::New(env, "C_DC_NA_1 'value' must be 0-3").ThrowAsJavaScriptException();
+                        return env.Undefined();
+                    }
+                    DoubleCommand dc = DoubleCommand_create(NULL, ioa, value, bselCmd, ql);
+                    CS101_ASDU_addInformationObject(asdu, (InformationObject)dc);
+                    success = IMasterConnection_sendASDU(targetConnection, asdu);
+                    DoubleCommand_destroy(dc);
+                    break;
+                }
+                case C_RC_TA_1: { // Команда регулирования шага с меткой времени
+                    if (!cmdObj.Get("value").IsNumber() || !cmdObj.Has("timestamp") || !cmdObj.Get("timestamp").IsNumber()) {
+                        Napi::TypeError::New(env, "C_RC_TA_1 requires 'value' (number 0-3) and 'timestamp' (number)").ThrowAsJavaScriptException();
+                        return env.Undefined();
+                    }
+                    int value = cmdObj.Get("value").As<Napi::Number>().Int32Value();
+                    uint64_t timestamp = cmdObj.Get("timestamp").As<Napi::Number>().Int64Value();
+                    if (value < 0 || value > 3) {
+                        Napi::RangeError::New(env, "C_RC_TA_1 'value' must be 0-3").ThrowAsJavaScriptException();
+                        return env.Undefined();
+                    }
+                    StepCommandWithCP56Time2a rc = StepCommandWithCP56Time2a_create(NULL, ioa, (StepCommandValue)value, bselCmd, ql, CP56Time2a_createFromMsTimestamp(NULL, timestamp));
+                    CS101_ASDU_addInformationObject(asdu, (InformationObject)rc);
+                    success = IMasterConnection_sendASDU(targetConnection, asdu);
+                    StepCommandWithCP56Time2a_destroy(rc);
+                    break;
+                }
+                case C_SE_TA_1: { // Установка нормализованного значения с меткой времени
+                    if (!cmdObj.Get("value").IsNumber() || !cmdObj.Has("timestamp") || !cmdObj.Get("timestamp").IsNumber()) {
+                        Napi::TypeError::New(env, "C_SE_TA_1 requires 'value' (number -1.0 to 1.0) and 'timestamp' (number)").ThrowAsJavaScriptException();
+                        return env.Undefined();
+                    }
+                    float value = cmdObj.Get("value").As<Napi::Number>().FloatValue();
+                    uint64_t timestamp = cmdObj.Get("timestamp").As<Napi::Number>().Int64Value();
+                    if (value < -1.0f || value > 1.0f) {
+                        Napi::RangeError::New(env, "C_SE_TA_1 'value' must be between -1.0 and 1.0").ThrowAsJavaScriptException();
+                        return env.Undefined();
+                    }
+                    SetpointCommandNormalizedWithCP56Time2a se = SetpointCommandNormalizedWithCP56Time2a_create(NULL, ioa, value, bselCmd, ql, CP56Time2a_createFromMsTimestamp(NULL, timestamp));
+                    CS101_ASDU_addInformationObject(asdu, (InformationObject)se);
+                    success = IMasterConnection_sendASDU(targetConnection, asdu);
+                    SetpointCommandNormalizedWithCP56Time2a_destroy(se);
+                    break;
+                }
+                case C_SE_NB_1: { // Установка масштабированного значения
+                    if (!cmdObj.Get("value").IsNumber()) {
+                        Napi::TypeError::New(env, "C_SE_NB_1 requires 'value' as number (-32768 to 32767)").ThrowAsJavaScriptException();
+                        return env.Undefined();
+                    }
+                    int value = cmdObj.Get("value").As<Napi::Number>().Int32Value();
+                    if (value < -32768 || value > 32767) {
+                        Napi::RangeError::New(env, "C_SE_NB_1 'value' must be between -32768 and 32767").ThrowAsJavaScriptException();
+                        return env.Undefined();
+                    }
+                    SetpointCommandScaled se = SetpointCommandScaled_create(NULL, ioa, value, bselCmd, ql);
+                    CS101_ASDU_addInformationObject(asdu, (InformationObject)se);
+                    success = IMasterConnection_sendASDU(targetConnection, asdu);
+                    SetpointCommandScaled_destroy(se);
+                    break;
+                }
+                case C_SE_NC_1: { // Установка короткого значения с плавающей точкой
+                    if (!cmdObj.Get("value").IsNumber()) {
+                        Napi::TypeError::New(env, "C_SE_NC_1 requires 'value' as number").ThrowAsJavaScriptException();
+                        return env.Undefined();
+                    }
+                    float value = cmdObj.Get("value").As<Napi::Number>().FloatValue();
+                    SetpointCommandShort se = SetpointCommandShort_create(NULL, ioa, value, bselCmd, ql);
+                    CS101_ASDU_addInformationObject(asdu, (InformationObject)se);
+                    success = IMasterConnection_sendASDU(targetConnection, asdu);
+                    SetpointCommandShort_destroy(se);
+                    break;
+                }
+                case C_BO_NA_1: { // Битовая строка 32 бита
+                    if (!cmdObj.Get("value").IsNumber()) {
+                        Napi::TypeError::New(env, "C_BO_NA_1 requires 'value' as number (32-bit unsigned integer)").ThrowAsJavaScriptException();
+                        return env.Undefined();
+                    }
+                    uint32_t value = cmdObj.Get("value").As<Napi::Number>().Uint32Value();
+                    Bitstring32Command bo = Bitstring32Command_create(NULL, ioa, value);
+                    CS101_ASDU_addInformationObject(asdu, (InformationObject)bo);
+                    success = IMasterConnection_sendASDU(targetConnection, asdu);
+                    Bitstring32Command_destroy(bo);
+                    break;
+                }
+                case C_SC_TA_1: { // Одиночная команда с меткой времени
+                    if (!cmdObj.Get("value").IsBoolean() || !cmdObj.Has("timestamp") || !cmdObj.Get("timestamp").IsNumber()) {
+                        Napi::TypeError::New(env, "C_SC_TA_1 requires 'value' (boolean) and 'timestamp' (number)").ThrowAsJavaScriptException();
+                        return env.Undefined();
+                    }
+                    bool value = cmdObj.Get("value").As<Napi::Boolean>();
+                    uint64_t timestamp = cmdObj.Get("timestamp").As<Napi::Number>().Int64Value();
+                    SingleCommandWithCP56Time2a sc = SingleCommandWithCP56Time2a_create(NULL, ioa, value, bselCmd, ql, CP56Time2a_createFromMsTimestamp(NULL, timestamp));
+                    CS101_ASDU_addInformationObject(asdu, (InformationObject)sc);
+                    success = IMasterConnection_sendASDU(targetConnection, asdu);
+                    SingleCommandWithCP56Time2a_destroy(sc);
+                    break;
+                }
+                case C_DC_TA_1: { // Двойная команда с меткой времени
+                    if (!cmdObj.Get("value").IsNumber() || !cmdObj.Has("timestamp") || !cmdObj.Get("timestamp").IsNumber()) {
+                        Napi::TypeError::New(env, "C_DC_TA_1 requires 'value' (number 0-3) and 'timestamp' (number)").ThrowAsJavaScriptException();
+                        return env.Undefined();
+                    }
+                    int value = cmdObj.Get("value").As<Napi::Number>().Int32Value();
+                    uint64_t timestamp = cmdObj.Get("timestamp").As<Napi::Number>().Int64Value();
+                    if (value < 0 || value > 3) {
+                        Napi::RangeError::New(env, "C_DC_TA_1 'value' must be 0-3").ThrowAsJavaScriptException();
+                        return env.Undefined();
+                    }
+                    DoubleCommandWithCP56Time2a dc = DoubleCommandWithCP56Time2a_create(NULL, ioa, value, bselCmd, ql, CP56Time2a_createFromMsTimestamp(NULL, timestamp));
+                    CS101_ASDU_addInformationObject(asdu, (InformationObject)dc);
+                    success = IMasterConnection_sendASDU(targetConnection, asdu);
+                    DoubleCommandWithCP56Time2a_destroy(dc);
+                    break;
+                }
+               
+                case C_SE_TB_1: { // Установка масштабированного значения с меткой времени
+                    if (!cmdObj.Get("value").IsNumber() || !cmdObj.Has("timestamp") || !cmdObj.Get("timestamp").IsNumber()) {
+                        Napi::TypeError::New(env, "C_SE_TB_1 requires 'value' (number -32768 to 32767) and 'timestamp' (number)").ThrowAsJavaScriptException();
+                        return env.Undefined();
+                    }
+                    int value = cmdObj.Get("value").As<Napi::Number>().Int32Value();
+                    uint64_t timestamp = cmdObj.Get("timestamp").As<Napi::Number>().Int64Value();
+                    if (value < -32768 || value > 32767) {
+                        Napi::RangeError::New(env, "C_SE_TB_1 'value' must be between -32768 and 32767").ThrowAsJavaScriptException();
+                        return env.Undefined();
+                    }
+                    SetpointCommandScaledWithCP56Time2a se = SetpointCommandScaledWithCP56Time2a_create(NULL, ioa, value, bselCmd, ql, CP56Time2a_createFromMsTimestamp(NULL, timestamp));
+                    CS101_ASDU_addInformationObject(asdu, (InformationObject)se);
+                    success = IMasterConnection_sendASDU(targetConnection, asdu);
+                    SetpointCommandScaledWithCP56Time2a_destroy(se);
+                    break;
+                }
+                case C_SE_TC_1: { // Установка короткого значения с плавающей точкой с меткой времени
+                    if (!cmdObj.Get("value").IsNumber() || !cmdObj.Has("timestamp") || !cmdObj.Get("timestamp").IsNumber()) {
+                        Napi::TypeError::New(env, "C_SE_TC_1 requires 'value' (number) and 'timestamp' (number)").ThrowAsJavaScriptException();
+                        return env.Undefined();
+                    }
+                    float value = cmdObj.Get("value").As<Napi::Number>().FloatValue();
+                    uint64_t timestamp = cmdObj.Get("timestamp").As<Napi::Number>().Int64Value();
+                    SetpointCommandShortWithCP56Time2a se = SetpointCommandShortWithCP56Time2a_create(NULL, ioa, value, bselCmd, ql, CP56Time2a_createFromMsTimestamp(NULL, timestamp));
+                    CS101_ASDU_addInformationObject(asdu, (InformationObject)se);
+                    success = IMasterConnection_sendASDU(targetConnection, asdu);
+                    SetpointCommandShortWithCP56Time2a_destroy(se);
+                    break;
+                }
+                case C_BO_TA_1: { // Битовая строка 32 бита с меткой времени
+                    if (!cmdObj.Get("value").IsNumber() || !cmdObj.Has("timestamp") || !cmdObj.Get("timestamp").IsNumber()) {
+                        Napi::TypeError::New(env, "C_BO_TA_1 requires 'value' (32-bit number) and 'timestamp' (number)").ThrowAsJavaScriptException();
+                        return env.Undefined();
+                    }
+                    uint32_t value = cmdObj.Get("value").As<Napi::Number>().Uint32Value();
+                    uint64_t timestamp = cmdObj.Get("timestamp").As<Napi::Number>().Int64Value();
+                    Bitstring32CommandWithCP56Time2a bo = Bitstring32CommandWithCP56Time2a_create(NULL, ioa, value, CP56Time2a_createFromMsTimestamp(NULL, timestamp));
+                    CS101_ASDU_addInformationObject(asdu, (InformationObject)bo);
+                    success = IMasterConnection_sendASDU(targetConnection, asdu);
+                    Bitstring32CommandWithCP56Time2a_destroy(bo);
+                    break;
+                }
+                case C_IC_NA_1: { // Команда опроса (интеррогейшн)
+                    if (!cmdObj.Get("value").IsNumber()) {
+                        Napi::TypeError::New(env, "C_IC_NA_1 requires 'value' as number (QOI, 0-255)").ThrowAsJavaScriptException();
+                        return env.Undefined();
+                    }
+                    int value = cmdObj.Get("value").As<Napi::Number>().Int32Value();
+                    if (value < 0 || value > 255) {
+                        Napi::RangeError::New(env, "C_IC_NA_1 'value' (QOI) must be 0-255").ThrowAsJavaScriptException();
+                        return env.Undefined();
+                    }
+                    InterrogationCommand ic = InterrogationCommand_create(NULL, ioa, value);
+                    CS101_ASDU_addInformationObject(asdu, (InformationObject)ic);
+                    success = IMasterConnection_sendASDU(targetConnection, asdu);
+                    InterrogationCommand_destroy(ic);
+                    break;
+                }
+                case C_CI_NA_1: { // Команда опроса счетчиков
+                    if (!cmdObj.Get("value").IsNumber()) {
+                        Napi::TypeError::New(env, "C_CI_NA_1 requires 'value' as number (QCC, 0-255)").ThrowAsJavaScriptException();
+                        return env.Undefined();
+                    }
+                    int value = cmdObj.Get("value").As<Napi::Number>().Int32Value();
+                    if (value < 0 || value > 255) {
+                        Napi::RangeError::New(env, "C_CI_NA_1 'value' (QCC) must be 0-255").ThrowAsJavaScriptException();
+                        return env.Undefined();
+                    }
+                    CounterInterrogationCommand ci = CounterInterrogationCommand_create(NULL, ioa, value);
+                    CS101_ASDU_addInformationObject(asdu, (InformationObject)ci);
+                    success = IMasterConnection_sendASDU(targetConnection, asdu);
+                    CounterInterrogationCommand_destroy(ci);
+                    break;
+                }
+                case C_RD_NA_1: { // Команда чтения
+                    // Для C_RD_NA_1 значение не требуется, только IOA
+                    ReadCommand rd = ReadCommand_create(NULL, ioa);
+                    CS101_ASDU_addInformationObject(asdu, (InformationObject)rd);
+                    success = IMasterConnection_sendASDU(targetConnection, asdu);
+                    ReadCommand_destroy(rd);
+                    break;
+                }
+                case C_CS_NA_1: { // Команда синхронизации времени
+                    if (!cmdObj.Has("timestamp") || !cmdObj.Get("timestamp").IsNumber()) {
+                        Napi::TypeError::New(env, "C_CS_NA_1 requires 'timestamp' (number)").ThrowAsJavaScriptException();
+                        return env.Undefined();
+                    }
+                    uint64_t timestamp = cmdObj.Get("timestamp").As<Napi::Number>().Int64Value();
+                    ClockSynchronizationCommand cs = ClockSynchronizationCommand_create(NULL, ioa, CP56Time2a_createFromMsTimestamp(NULL, timestamp));
+                    CS101_ASDU_addInformationObject(asdu, (InformationObject)cs);
+                    success = IMasterConnection_sendASDU(targetConnection, asdu);
+                    ClockSynchronizationCommand_destroy(cs);
+                    break;
+                }
+
                 default:
                     printf("Unsupported command type: %d, serverID: %s, serverId: %i, clientId: %i\n", typeId, serverID.c_str(), serverId, targetClientId);
                     CS101_ASDU_destroy(asdu);
@@ -526,9 +762,11 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
 
             if (!success) {
                 allSuccess = false;
-                printf("Failed to send command: typeId=%d, ioa=%d, serverID: %s, serverId: %i, clientId: %i\n", typeId, ioa, serverID.c_str(), serverId, targetClientId);
+                printf("Failed to send command: typeId=%d, ioa=%d, bselCmd=%d, ql=%d, serverID: %s, serverId: %i, clientId: %i\n", 
+                       typeId, ioa, bselCmd, ql, serverID.c_str(), serverId, targetClientId);
             } else {
-                printf("Sent command: typeId=%d, ioa=%d, serverID: %s, serverId: %i, clientId: %i\n", typeId, ioa, serverID.c_str(), serverId, targetClientId);
+                printf("Sent command: typeId=%d, ioa=%d, bselCmd=%d, ql=%d, serverID: %s, serverId: %i, clientId: %i\n", 
+                       typeId, ioa, bselCmd, ql, serverID.c_str(), serverId, targetClientId);
             }
         }
         return Napi::Boolean::New(env, allSuccess);
@@ -938,15 +1176,17 @@ bool IEC104Server::RawMessageHandler(void* parameter, IMasterConnection connecti
 
         return true;
     } catch (const std::exception& e) {
-        printf("Exception in RawMessageHandler: %s, serverID: %s, serverId: %i, clientId: %i\n", e.what(), server->serverID.c_str(), server->serverId, clientId);
-        server->tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
-            Napi::Object eventObj = Napi::Object::New(env);
-            eventObj.Set("serverID", Napi::String::New(env, server->serverID));
-            eventObj.Set("clientId", Napi::Number::New(env, clientId));
-            eventObj.Set("type", Napi::String::New(env, "error"));
-            eventObj.Set("reason", Napi::String::New(env, string("ASDU handling failed: ") + e.what()));
-            jsCallback.Call({Napi::String::New(env, "data"), eventObj});
-        });
-        return false;
+        printf("Exception in RawMessageHandler: %s, serverID: %s, serverId: %i, clientId: %i\n", e.what(), server->serverID.c_str(), server->serverId, clientId); 
+        server->tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) { 
+                Napi::Object eventObj = Napi::Object::New(env); 
+                eventObj.Set("serverID", Napi::String::New(env, server->serverID)); 
+                eventObj.Set("clientId", Napi::Number::New(env, clientId)); 
+                eventObj.Set("type", Napi::String::New(env, "error")); 
+                eventObj.Set("reason", Napi::String::New(env, string("Обработка ASDU не удалась: ") + e.what())); 
+                jsCallback.Call({Napi::String::New(env, "data"), eventObj}); 
+            }); 
+            return false; 
+        } 
     }
-}
+
+      

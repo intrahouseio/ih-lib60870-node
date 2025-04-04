@@ -88,6 +88,7 @@ IEC101MasterBalanced::IEC101MasterBalanced(const CallbackInfo &info) : ObjectWra
 
     Napi::Function emit = info[0].As<Napi::Function>();
     running = false;
+    asduAddress = 0; // Инициализация по умолчанию
 
     try {
         tsfn = ThreadSafeFunction::New(
@@ -153,7 +154,6 @@ Napi::Value IEC101MasterBalanced::Connect(const CallbackInfo &info)
 
     int linkAddress = 1;
     int originatorAddress = 1;
-    asduAddress = 1; // Инициализируем поле класса
     int k = 12;
     int w = 8;
     int t0 = 30;
@@ -168,7 +168,7 @@ Napi::Value IEC101MasterBalanced::Connect(const CallbackInfo &info)
         Napi::Object params = info[4].As<Napi::Object>();
         if (params.Has("linkAddress")) linkAddress = params.Get("linkAddress").As<Number>().Int32Value();
         if (params.Has("originatorAddress")) originatorAddress = params.Get("originatorAddress").As<Number>().Int32Value();
-        if (params.Has("asduAddress")) asduAddress = params.Get("asduAddress").As<Number>().Int32Value();
+        if (params.Has("asduAddress")) asduAddress = params.Get("asduAddress").As<Number>().Int32Value(); // Извлечение asduAddress
         if (params.Has("k")) k = params.Get("k").As<Number>().Int32Value();
         if (params.Has("w")) w = params.Get("w").As<Number>().Int32Value();
         if (params.Has("t0")) t0 = params.Get("t0").As<Number>().Int32Value();
@@ -187,7 +187,7 @@ Napi::Value IEC101MasterBalanced::Connect(const CallbackInfo &info)
             Napi::Error::New(env, "originatorAddress must be 0-255").ThrowAsJavaScriptException();
             return env.Undefined();
         }
-        if (asduAddress < 0 || asduAddress > 65535) {
+        if (asduAddress < 0 || asduAddress > 65535) { // Ограничение для ASDU адреса (2 байта)
             Napi::Error::New(env, "asduAddress must be 0-65535").ThrowAsJavaScriptException();
             return env.Undefined();
         }
@@ -471,7 +471,7 @@ Napi::Value IEC101MasterBalanced::SendCommands(const CallbackInfo &info)
 
             int typeId = cmdObj.Get("typeId").As<Napi::Number>().Int32Value();
             int ioa = cmdObj.Get("ioa").As<Napi::Number>().Int32Value();
-            CS101_ASDU asdu = CS101_ASDU_create(alParams, false, CS101_COT_ACTIVATION, 0, this->asduAddress, false, false);
+            CS101_ASDU asdu = CS101_ASDU_create(alParams, false, CS101_COT_ACTIVATION, 0, this->asduAddress, false, false); // Используем asduAddress
 
             // В сбалансированном режиме мы не получаем явного подтверждения отправки, поэтому success всегда true
             CS101_Master_sendASDU(master, asdu); // Добавляем ASDU в очередь
@@ -827,6 +827,7 @@ bool IEC101MasterBalanced::RawMessageHandler(void *parameter, int address, CS101
     IEC101MasterBalanced *client = static_cast<IEC101MasterBalanced *>(parameter);
     IEC60870_5_TypeID typeID = CS101_ASDU_getTypeID(asdu);
     int numberOfElements = CS101_ASDU_getNumberOfElements(asdu);
+    int receivedAsduAddress = CS101_ASDU_getCA(asdu); // Получаем адрес ASDU из полученного сообщения
 
     try {
         vector<tuple<int, double, uint8_t, uint64_t>> elements;
@@ -1062,8 +1063,8 @@ bool IEC101MasterBalanced::RawMessageHandler(void *parameter, int address, CS101
         }
 
         for (const auto& [ioa, val, quality, timestamp] : elements) {
-            printf("ASDU type: %s, clientID: %s, clientId: %i, ioa: %i, value: %f, quality: %u, timestamp: %" PRIu64 ", cnt: %i\n",
-                   TypeID_toString(typeID), client->clientID.c_str(), client->clientId, ioa, val, quality, timestamp, client->cnt);
+            printf("ASDU type: %s, clientID: %s, clientId: %i, asduAddress: %d, ioa: %i, value: %f, quality: %u, timestamp: %" PRIu64 ", cnt: %i\n",
+                   TypeID_toString(typeID), client->clientID.c_str(), client->clientId, receivedAsduAddress, ioa, val, quality, timestamp, client->cnt);
         }
 
         client->tsfn.NonBlockingCall([=](Napi::Env env, Function jsCallback) {
@@ -1073,6 +1074,7 @@ bool IEC101MasterBalanced::RawMessageHandler(void *parameter, int address, CS101
                 Napi::Object msg = Napi::Object::New(env);
                 msg.Set("clientID", String::New(env, client->clientID.c_str()));
                 msg.Set("typeId", Number::New(env, typeID));
+                msg.Set("asdu", Number::New(env, receivedAsduAddress)); // Добавляем полученный asduAddress
                 msg.Set("ioa", Number::New(env, ioa));
                 msg.Set("val", Number::New(env, val));
                 msg.Set("quality", Number::New(env, quality));

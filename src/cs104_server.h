@@ -23,6 +23,7 @@ public:
 private:
     static Napi::FunctionReference constructor;
 
+    
     CS104_Slave server;
     std::thread _thread;
     std::atomic<bool> running;
@@ -31,6 +32,7 @@ private:
     int serverId = 0;
     std::string serverID;
     int cnt = 0;
+    int asduAddress;     
     Napi::ThreadSafeFunction tsfn;
     std::map<IMasterConnection, int> clientConnections; // Map of client connections to client IDs
 

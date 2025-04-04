@@ -54,6 +54,8 @@ IEC101MasterUnbalanced::IEC101MasterUnbalanced(const CallbackInfo &info) : Objec
 
     Napi::Function emit = info[0].As<Napi::Function>();
     running = false;
+    originatorAddress = 1; // Инициализация по умолчанию
+    asduAddress = 0;       // Инициализация новой переменной по умолчанию
 
     try {
         tsfn = ThreadSafeFunction::New(
@@ -115,7 +117,6 @@ Napi::Value IEC101MasterUnbalanced::Connect(const CallbackInfo &info) {
     }
 
     int linkAddress = 1;
-    int originatorAddress = 1;
     int t0 = 30;
     int t1 = 15;
     int t2 = 10;
@@ -126,7 +127,7 @@ Napi::Value IEC101MasterUnbalanced::Connect(const CallbackInfo &info) {
         Napi::Object params = info[3].As<Napi::Object>();
         if (params.Has("linkAddress")) linkAddress = params.Get("linkAddress").As<Number>().Int32Value();
         if (params.Has("originatorAddress")) originatorAddress = params.Get("originatorAddress").As<Number>().Int32Value();
-        if (params.Has("asduAddress")) asduAddress = params.Get("asduAddress").As<Number>().Int32Value();
+        if (params.Has("asduAddress")) asduAddress = params.Get("asduAddress").As<Number>().Int32Value(); // Извлечение asduAddress
         if (params.Has("t0")) t0 = params.Get("t0").As<Number>().Int32Value();
         if (params.Has("t1")) t1 = params.Get("t1").As<Number>().Int32Value();
         if (params.Has("t2")) t2 = params.Get("t2").As<Number>().Int32Value();
@@ -141,7 +142,7 @@ Napi::Value IEC101MasterUnbalanced::Connect(const CallbackInfo &info) {
             Napi::Error::New(env, "originatorAddress must be 0-255").ThrowAsJavaScriptException();
             return env.Undefined();
         }
-        if (asduAddress < 0 || asduAddress > 65535) {
+        if (asduAddress < 0 || asduAddress > 65535) { // Ограничение для ASDU адреса (2 байта)
             Napi::Error::New(env, "asduAddress must be 0-65535").ThrowAsJavaScriptException();
             return env.Undefined();
         }
@@ -197,7 +198,7 @@ Napi::Value IEC101MasterUnbalanced::Connect(const CallbackInfo &info) {
                linkAddress, originatorAddress, asduAddress, t0, t1, t2, reconnectDelay, queueSize, clientID.c_str());
 
         running = true;
-        _thread = std::thread([this, portName, baudRate, linkAddress, originatorAddress, t0, t1, t2, reconnectDelay, queueSize] {
+        _thread = std::thread([this, portName, baudRate, linkAddress, t0, t1, t2, reconnectDelay, queueSize] {
             try {
                 int retryCount = 0;
                 while (running) { // Постоянное переподключение
@@ -212,7 +213,7 @@ Napi::Value IEC101MasterUnbalanced::Connect(const CallbackInfo &info) {
                             connected = true;
                             activated = true;
                             CS101_AppLayerParameters alParams = CS101_Master_getAppLayerParameters(master);
-                            CS101_ASDU asdu = CS101_ASDU_create(alParams, false, CS101_COT_REQUEST, 0, asduAddress, false, false);
+                            CS101_ASDU asdu = CS101_ASDU_create(alParams, false, CS101_COT_REQUEST, 0, this->asduAddress, false, false); // Используем asduAddress
                             CS101_ASDU_setTypeID(asdu, C_IC_NA_1);
                             InformationObject io = (InformationObject)InterrogationCommand_create(NULL, 0, IEC60870_QOI_STATION);
                             CS101_ASDU_addInformationObject(asdu, io);
@@ -267,7 +268,7 @@ Napi::Value IEC101MasterUnbalanced::Connect(const CallbackInfo &info) {
                         alParams.sizeOfTypeId = 1;
                         alParams.sizeOfVSQ = 1;
                         alParams.sizeOfCOT = 2;
-                        alParams.originatorAddress = originatorAddress;
+                        alParams.originatorAddress = this->originatorAddress; // Используем из объекта
                         alParams.sizeOfCA = 2;
                         alParams.sizeOfIOA = 3;
                         alParams.maxSizeOfASDU = 249;
@@ -428,7 +429,7 @@ Napi::Value IEC101MasterUnbalanced::SendCommands(const CallbackInfo &info) {
             Napi::Value value = cmdObj.Get("value");
 
             printf("Sending command: typeId=%d, ioa=%d, value=%f, clientID: %s\n", typeId, ioa, value.ToNumber().DoubleValue(), clientID.c_str());
-            CS101_ASDU asdu = CS101_ASDU_create(alParams, false, CS101_COT_ACTIVATION, 0, this->asduAddress, false, false);
+            CS101_ASDU asdu = CS101_ASDU_create(alParams, false, CS101_COT_ACTIVATION, 0, this->asduAddress, false, false); // Используем asduAddress
 
             switch (typeId) {
                 case C_SC_NA_1: {
@@ -818,6 +819,7 @@ bool IEC101MasterUnbalanced::RawMessageHandler(void *parameter, int address, CS1
     IEC101MasterUnbalanced *client = static_cast<IEC101MasterUnbalanced *>(parameter);
     IEC60870_5_TypeID typeID = CS101_ASDU_getTypeID(asdu);
     int numberOfElements = CS101_ASDU_getNumberOfElements(asdu);
+    int receivedAsduAddress = CS101_ASDU_getCA(asdu); // Получаем адрес ASDU из полученного сообщения
 
     printf("RawMessageHandler called, address: %d, typeID: %d, elements: %d, clientID: %s\n", address, typeID, numberOfElements, client->clientID.c_str());
 
@@ -1039,8 +1041,8 @@ bool IEC101MasterUnbalanced::RawMessageHandler(void *parameter, int address, CS1
         }
 
         for (const auto& [ioa, val, quality, timestamp] : elements) {
-            printf("ASDU type: %s, clientID: %s, ioa: %i, value: %f, quality: %u, timestamp: %" PRIu64 ", cnt: %i, slaveAddress: %d\n",
-                   TypeID_toString(typeID), client->clientID.c_str(), ioa, val, quality, timestamp, client->cnt, address);
+            printf("ASDU type: %s, clientID: %s, asduAddress: %d, ioa: %i, value: %f, quality: %u, timestamp: %" PRIu64 ", cnt: %i, slaveAddress: %d\n",
+                   TypeID_toString(typeID), client->clientID.c_str(), receivedAsduAddress, ioa, val, quality, timestamp, client->cnt, address);
         }
 
         client->tsfn.NonBlockingCall([=](Napi::Env env, Function jsCallback) {
@@ -1050,6 +1052,7 @@ bool IEC101MasterUnbalanced::RawMessageHandler(void *parameter, int address, CS1
                 Napi::Object msg = Napi::Object::New(env);
                 msg.Set("clientID", String::New(env, client->clientID.c_str()));
                 msg.Set("typeId", Number::New(env, typeID));
+                msg.Set("asdu", Number::New(env, receivedAsduAddress)); // Добавляем полученный asduAddress
                 msg.Set("ioa", Number::New(env, ioa));
                 msg.Set("val", Number::New(env, val));
                 msg.Set("quality", Number::New(env, quality));
