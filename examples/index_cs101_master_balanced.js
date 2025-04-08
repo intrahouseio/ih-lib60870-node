@@ -1,5 +1,5 @@
 // Load the addon compiled for macOS ARM64
-const { IEC101MasterUnbalanced } = require('./builds/linux_x64/addon_iec60870');
+const { IEC101MasterUnbalanced } = require('../build/Release/addon_iec60870');
 const util = require('util');
 
 // CS101 Master: Connects to a device via serial port in unbalanced mode
@@ -50,16 +50,25 @@ async function main() {
         console.log('Starting IEC 60870-5-101 master in unbalanced mode...');
 
         // Connect to the device via the specific serial port with baud rate 19200
-        master.connect('/dev/tty.usbserial-A505KXKT', 19200, 1, 'cs101_master_1', {
-            linkAddress: 1,           // Link layer address (0-255)
-            originatorAddress: 1,     // Originator address (0-255)
-            asduAddress: 1,           // ASDU address (0-65535)
-            t0: 30,                   // Link state timeout (seconds)
-            t1: 15,                   // ACK timeout (seconds)
-            t2: 10,                   // Repeat timeout (seconds)
-            reconnectDelay: 5,        // Delay between reconnects (seconds)
-            maxRetries: 3,            // Max reconnect attempts
-            queueSize: 100            // Queue size for ASDUs
+        master.connect({
+            portName: "/dev/tty.usbserial-A505KXKT",
+            baudRate: 19200,
+            clientId: 1,
+            clientID: "cs101_master_1'",
+            params: {
+                linkAddress: 1,
+                originatorAddress: 1,
+                asduAddress: 1,
+                k: 12,
+                w: 8,
+                t0: 30,
+                t1: 15,
+                t2: 10,
+                t3: 20,
+                reconnectDelay: 5,
+                maxRetries: 3,
+                queueSize: 100
+            }
         });
 
         // Wait for connection to stabilize and initial polling to start

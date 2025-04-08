@@ -40,7 +40,8 @@ IEC104Server::IEC104Server(const Napi::CallbackInfo& info) : Napi::ObjectWrap<IE
 
     Napi::Function emit = info[0].As<Napi::Function>();
     running = false;
-    asduAddress = 0; // Инициализация по умолчанию
+    started = false;
+    cnt = 0;
 
     try {
         tsfn = Napi::ThreadSafeFunction::New(
@@ -53,6 +54,7 @@ IEC104Server::IEC104Server(const Napi::CallbackInfo& info) : Napi::ObjectWrap<IE
         );
     } catch (const std::exception& e) {
         printf("Failed to create ThreadSafeFunction: %s\n", e.what());
+        fflush(stdout);
         Napi::Error::New(info.Env(), string("TSFN creation failed: ") + e.what()).ThrowAsJavaScriptException();
     }
 }
@@ -62,7 +64,8 @@ IEC104Server::~IEC104Server() {
     if (running) {
         running = false;
         if (started) {
-            printf("Destructor stopping server, serverID: %s, serverId: %i\n", serverID.c_str(), serverId);
+            printf("Destructor stopping server, serverID: %s\n", serverID.c_str());
+            fflush(stdout);
             CS104_Slave_stop(server);
             CS104_Slave_destroy(server);
             started = false;
@@ -77,18 +80,30 @@ IEC104Server::~IEC104Server() {
 Napi::Value IEC104Server::Start(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
 
-    if (info.Length() < 3 || !info[0].IsNumber() || !info[1].IsNumber() || !info[2].IsString()) {
-        Napi::TypeError::New(env, "Expected port (number), serverId (number), serverID (string), [params (object)]").ThrowAsJavaScriptException();
+    if (info.Length() < 1 || !info[0].IsObject()) {
+        Napi::TypeError::New(env, "Expected an object with { port (number), serverID (string), [ipReserve (string), params (object)] }").ThrowAsJavaScriptException();
         return env.Undefined();
     }
 
-    int port = info[0].As<Napi::Number>().Int32Value();
-    serverId = info[1].As<Napi::Number>().Int32Value();
-    serverID = info[2].As<Napi::String>();
+    Napi::Object config = info[0].As<Napi::Object>();
+
+    if (!config.Has("port") || !config.Get("port").IsNumber() ||
+        !config.Has("serverID") || !config.Get("serverID").IsString()) {
+        Napi::TypeError::New(env, "Object must contain 'port' (number) and 'serverID' (string)").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+
+    int port = config.Get("port").As<Napi::Number>().Int32Value();
+    serverID = config.Get("serverID").As<Napi::String>().Utf8Value();
 
     if (port <= 0 || serverID.empty()) {
-        Napi::Error::New(env, "Invalid port or serverID").ThrowAsJavaScriptException();
+        Napi::Error::New(env, "Invalid 'port' or 'serverID'").ThrowAsJavaScriptException();
         return env.Undefined();
+    }
+
+    std::string ipReserve = "";
+    if (config.Has("ipReserve") && config.Get("ipReserve").IsString()) {
+        ipReserve = config.Get("ipReserve").As<Napi::String>().Utf8Value();
     }
 
     {
@@ -108,10 +123,9 @@ Napi::Value IEC104Server::Start(const Napi::CallbackInfo& info) {
     int t3 = 20;
     int maxClients = 10;
 
-    if (info.Length() > 3 && info[3].IsObject()) {
-        Napi::Object params = info[3].As<Napi::Object>();
+    if (config.Has("params") && config.Get("params").IsObject()) {
+        Napi::Object params = config.Get("params").As<Napi::Object>();
         if (params.Has("originatorAddress")) originatorAddress = params.Get("originatorAddress").As<Napi::Number>().Int32Value();
-        if (params.Has("asduAddress")) asduAddress = params.Get("asduAddress").As<Napi::Number>().Int32Value(); // Извлечение asduAddress
         if (params.Has("k")) k = params.Get("k").As<Napi::Number>().Int32Value();
         if (params.Has("w")) w = params.Get("w").As<Napi::Number>().Int32Value();
         if (params.Has("t0")) t0 = params.Get("t0").As<Napi::Number>().Int32Value();
@@ -122,10 +136,6 @@ Napi::Value IEC104Server::Start(const Napi::CallbackInfo& info) {
 
         if (originatorAddress < 0 || originatorAddress > 255) {
             Napi::Error::New(env, "originatorAddress must be 0-255").ThrowAsJavaScriptException();
-            return env.Undefined();
-        }
-        if (asduAddress < 0 || asduAddress > 65535) { // Ограничение для ASDU адреса (2 байта)
-            Napi::Error::New(env, "asduAddress must be 0-65535").ThrowAsJavaScriptException();
             return env.Undefined();
         }
         if (k <= 0 || w <= 0 || t0 <= 0 || t1 <= 0 || t2 <= 0 || t3 <= 0) {
@@ -139,8 +149,9 @@ Napi::Value IEC104Server::Start(const Napi::CallbackInfo& info) {
     }
 
     try {
-        printf("Creating server on port %d, serverID: %s, serverId: %i\n", port, serverID.c_str(), serverId);
-        server = CS104_Slave_create(maxClients, maxClients); // Max clients and queue size
+        printf("Creating server on port %d, serverID: %s, ipReserve: %s\n", port, serverID.c_str(), ipReserve.c_str());
+        fflush(stdout);
+        server = CS104_Slave_create(maxClients, maxClients);
         if (!server) {
             throw runtime_error("Failed to create server object");
         }
@@ -167,8 +178,11 @@ Napi::Value IEC104Server::Start(const Napi::CallbackInfo& info) {
 
         CS104_Slave_setServerMode(server, CS104_MODE_MULTIPLE_REDUNDANCY_GROUPS);
 
-        printf("Starting server with params: originatorAddress=%d, asduAddress=%d, k=%d, w=%d, t0=%d, t1=%d, t2=%d, t3=%d, maxClients=%d, serverID: %s, serverId: %i\n",
-               originatorAddress, asduAddress, k, w, t0, t1, t2, t3, maxClients, serverID.c_str(), serverId);
+        this->ipReserve = ipReserve;
+
+        printf("Starting server with params: originatorAddress=%d, k=%d, w=%d, t0=%d, t1=%d, t2=%d, t3=%d, maxClients=%d, serverID: %s\n",
+               originatorAddress, k, w, t0, t1, t2, t3, maxClients, serverID.c_str());
+        fflush(stdout);
 
         running = true;
         _thread = std::thread([this] {
@@ -177,7 +191,8 @@ Napi::Value IEC104Server::Start(const Napi::CallbackInfo& info) {
                 std::lock_guard<std::mutex> lock(connMutex);
                 started = true;
             }
-            printf("Server started, serverID: %s, serverId: %i\n", serverID.c_str(), serverId);
+            printf("Server started, serverID: %s\n", serverID.c_str());
+            fflush(stdout);
 
             while (running) {
                 Thread_sleep(100);
@@ -187,12 +202,14 @@ Napi::Value IEC104Server::Start(const Napi::CallbackInfo& info) {
             CS104_Slave_stop(server);
             CS104_Slave_destroy(server);
             started = false;
-            printf("Server stopped, serverID: %s, serverId: %i\n", serverID.c_str(), serverId);
+            printf("Server stopped, serverID: %s\n", serverID.c_str());
+            fflush(stdout);
         });
 
         return env.Undefined();
     } catch (const std::exception& e) {
-        printf("Exception in Start: %s, serverID: %s, serverId: %i\n", e.what(), serverID.c_str(), serverId);
+        printf("Exception in Start: %s, serverID: %s\n", e.what(), serverID.c_str());
+        fflush(stdout);
         Napi::Error::New(env, string("Start failed: ") + e.what()).ThrowAsJavaScriptException();
         return env.Undefined();
     }
@@ -205,7 +222,8 @@ Napi::Value IEC104Server::Stop(const Napi::CallbackInfo& info) {
         if (running) {
             running = false;
             if (started) {
-                printf("Stop called, stopping server, serverID: %s, serverId: %i\n", serverID.c_str(), serverId);
+                printf("Stop called, stopping server, serverID: %s\n", serverID.c_str());
+                fflush(stdout);
                 CS104_Slave_stop(server);
                 CS104_Slave_destroy(server);
                 started = false;
@@ -227,7 +245,7 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
 
     if (info.Length() < 2 || !info[0].IsNumber() || !info[1].IsArray()) {
-        Napi::TypeError::New(env, "Expected clientId (number), commands (array of objects with 'typeId', 'ioa', 'value', and optional fields)").ThrowAsJavaScriptException();
+        Napi::TypeError::New(env, "Expected clientId (number), commands (array of objects with 'typeId', 'ioa', 'value', 'asduAddress' and optional fields)").ThrowAsJavaScriptException();
         return env.Undefined();
     }
 
@@ -257,6 +275,8 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
 
     try {
         bool allSuccess = true;
+        bool useReserve = false;
+
         for (uint32_t i = 0; i < commands.Length(); i++) {
             Napi::Value item = commands[i];
             if (!item.IsObject()) {
@@ -265,33 +285,32 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
             }
 
             Napi::Object cmdObj = item.As<Napi::Object>();
-            if (!cmdObj.Has("typeId") || !cmdObj.Has("ioa") || !cmdObj.Has("value")) {
-                Napi::TypeError::New(env, "Each command must have 'typeId' (number), 'ioa' (number), and 'value'").ThrowAsJavaScriptException();
+            if (!cmdObj.Has("typeId") || !cmdObj.Has("ioa") || !cmdObj.Has("value") || !cmdObj.Has("asduAddress")) {
+                Napi::TypeError::New(env, "Each command must have 'typeId' (number), 'ioa' (number), 'value', and 'asduAddress' (number)").ThrowAsJavaScriptException();
                 return env.Undefined();
             }
 
             int typeId = cmdObj.Get("typeId").As<Napi::Number>().Int32Value();
             int ioa = cmdObj.Get("ioa").As<Napi::Number>().Int32Value();
+            int asduAddress = cmdObj.Get("asduAddress").As<Napi::Number>().Int32Value();
 
-            // Извлечение дополнительных параметров bselCmd и ql
-            bool bselCmd = false; // По умолчанию: исполнение (false), а не выбор (true)
-            int ql = 0;           // По умолчанию: без импульса
+            bool bselCmd = false;
+            int ql = 0;
             if (cmdObj.Has("bselCmd") && cmdObj.Get("bselCmd").IsBoolean()) {
                 bselCmd = cmdObj.Get("bselCmd").As<Napi::Boolean>();
             }
             if (cmdObj.Has("ql") && cmdObj.Get("ql").IsNumber()) {
                 ql = cmdObj.Get("ql").As<Napi::Number>().Int32Value();
-                if (ql < 0 || ql > 31) { // QOC обычно 0-31 согласно IEC 60870-5-101/104
+                if (ql < 0 || ql > 31) {
                     Napi::RangeError::New(env, "ql must be between 0 and 31").ThrowAsJavaScriptException();
                     return env.Undefined();
                 }
             }
 
-            CS101_ASDU asdu = CS101_ASDU_create(alParams, false, CS101_COT_SPONTANEOUS, 0, this->asduAddress, false, false); // Используем asduAddress
+            CS101_ASDU asdu = CS101_ASDU_create(alParams, false, CS101_COT_SPONTANEOUS, 0, asduAddress, false, false);
 
             bool success = false;
             switch (typeId) {
-                // Существующие типы мониторинга
                 case M_SP_NA_1: {
                     if (!cmdObj.Get("value").IsBoolean()) {
                         Napi::TypeError::New(env, "M_SP_NA_1 requires 'value' as boolean").ThrowAsJavaScriptException();
@@ -552,9 +571,7 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     BinaryCounterReading_destroy(bcr);
                     break;
                 }
-
-                // Новые типы команд управления
-                case C_SC_NA_1: { // Одиночная команда
+                case C_SC_NA_1: {
                     if (!cmdObj.Get("value").IsBoolean()) {
                         Napi::TypeError::New(env, "C_SC_NA_1 requires 'value' as boolean").ThrowAsJavaScriptException();
                         CS101_ASDU_destroy(asdu);
@@ -567,7 +584,7 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     SingleCommand_destroy(sc);
                     break;
                 }
-                case C_DC_NA_1: { // Двойная команда
+                case C_DC_NA_1: {
                     if (!cmdObj.Get("value").IsNumber()) {
                         Napi::TypeError::New(env, "C_DC_NA_1 requires 'value' as number (0-3)").ThrowAsJavaScriptException();
                         CS101_ASDU_destroy(asdu);
@@ -585,7 +602,7 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     DoubleCommand_destroy(dc);
                     break;
                 }
-                case C_RC_TA_1: { // Команда регулирования шага с меткой времени
+                case C_RC_TA_1: {
                     if (!cmdObj.Get("value").IsNumber() || !cmdObj.Has("timestamp") || !cmdObj.Get("timestamp").IsNumber()) {
                         Napi::TypeError::New(env, "C_RC_TA_1 requires 'value' (number 0-3) and 'timestamp' (number)").ThrowAsJavaScriptException();
                         CS101_ASDU_destroy(asdu);
@@ -604,7 +621,7 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     StepCommandWithCP56Time2a_destroy(rc);
                     break;
                 }
-                case C_SE_TA_1: { // Установка нормализованного значения с меткой времени
+                case C_SE_TA_1: {
                     if (!cmdObj.Get("value").IsNumber() || !cmdObj.Has("timestamp") || !cmdObj.Get("timestamp").IsNumber()) {
                         Napi::TypeError::New(env, "C_SE_TA_1 requires 'value' (number -1.0 to 1.0) and 'timestamp' (number)").ThrowAsJavaScriptException();
                         CS101_ASDU_destroy(asdu);
@@ -623,7 +640,7 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     SetpointCommandNormalizedWithCP56Time2a_destroy(se);
                     break;
                 }
-                case C_SE_NB_1: { // Установка масштабированного значения
+                case C_SE_NB_1: {
                     if (!cmdObj.Get("value").IsNumber()) {
                         Napi::TypeError::New(env, "C_SE_NB_1 requires 'value' as number (-32768 to 32767)").ThrowAsJavaScriptException();
                         CS101_ASDU_destroy(asdu);
@@ -641,7 +658,7 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     SetpointCommandScaled_destroy(se);
                     break;
                 }
-                case C_SE_NC_1: { // Установка короткого значения с плавающей точкой
+                case C_SE_NC_1: {
                     if (!cmdObj.Get("value").IsNumber()) {
                         Napi::TypeError::New(env, "C_SE_NC_1 requires 'value' as number").ThrowAsJavaScriptException();
                         CS101_ASDU_destroy(asdu);
@@ -654,7 +671,7 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     SetpointCommandShort_destroy(se);
                     break;
                 }
-                case C_BO_NA_1: { // Битовая строка 32 бита
+                case C_BO_NA_1: {
                     if (!cmdObj.Get("value").IsNumber()) {
                         Napi::TypeError::New(env, "C_BO_NA_1 requires 'value' as number (32-bit unsigned integer)").ThrowAsJavaScriptException();
                         CS101_ASDU_destroy(asdu);
@@ -667,7 +684,7 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     Bitstring32Command_destroy(bo);
                     break;
                 }
-                case C_SC_TA_1: { // Одиночная команда с меткой времени
+                case C_SC_TA_1: {
                     if (!cmdObj.Get("value").IsBoolean() || !cmdObj.Has("timestamp") || !cmdObj.Get("timestamp").IsNumber()) {
                         Napi::TypeError::New(env, "C_SC_TA_1 requires 'value' (boolean) and 'timestamp' (number)").ThrowAsJavaScriptException();
                         CS101_ASDU_destroy(asdu);
@@ -681,7 +698,7 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     SingleCommandWithCP56Time2a_destroy(sc);
                     break;
                 }
-                case C_DC_TA_1: { // Двойная команда с меткой времени
+                case C_DC_TA_1: {
                     if (!cmdObj.Get("value").IsNumber() || !cmdObj.Has("timestamp") || !cmdObj.Get("timestamp").IsNumber()) {
                         Napi::TypeError::New(env, "C_DC_TA_1 requires 'value' (number 0-3) and 'timestamp' (number)").ThrowAsJavaScriptException();
                         CS101_ASDU_destroy(asdu);
@@ -700,7 +717,7 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     DoubleCommandWithCP56Time2a_destroy(dc);
                     break;
                 }
-                case C_SE_TB_1: { // Установка масштабированного значения с меткой времени
+                case C_SE_TB_1: {
                     if (!cmdObj.Get("value").IsNumber() || !cmdObj.Has("timestamp") || !cmdObj.Get("timestamp").IsNumber()) {
                         Napi::TypeError::New(env, "C_SE_TB_1 requires 'value' (number -32768 to 32767) and 'timestamp' (number)").ThrowAsJavaScriptException();
                         CS101_ASDU_destroy(asdu);
@@ -719,7 +736,7 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     SetpointCommandScaledWithCP56Time2a_destroy(se);
                     break;
                 }
-                case C_SE_TC_1: { // Установка короткого значения с плавающей точкой с меткой времени
+                case C_SE_TC_1: {
                     if (!cmdObj.Get("value").IsNumber() || !cmdObj.Has("timestamp") || !cmdObj.Get("timestamp").IsNumber()) {
                         Napi::TypeError::New(env, "C_SE_TC_1 requires 'value' (number) and 'timestamp' (number)").ThrowAsJavaScriptException();
                         CS101_ASDU_destroy(asdu);
@@ -733,7 +750,7 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     SetpointCommandShortWithCP56Time2a_destroy(se);
                     break;
                 }
-                case C_BO_TA_1: { // Битовая строка 32 бита с меткой времени
+                case C_BO_TA_1: {
                     if (!cmdObj.Get("value").IsNumber() || !cmdObj.Has("timestamp") || !cmdObj.Get("timestamp").IsNumber()) {
                         Napi::TypeError::New(env, "C_BO_TA_1 requires 'value' (32-bit number) and 'timestamp' (number)").ThrowAsJavaScriptException();
                         CS101_ASDU_destroy(asdu);
@@ -747,7 +764,7 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     Bitstring32CommandWithCP56Time2a_destroy(bo);
                     break;
                 }
-                case C_IC_NA_1: { // Команда опроса (интеррогейшн)
+                case C_IC_NA_1: {
                     if (!cmdObj.Get("value").IsNumber()) {
                         Napi::TypeError::New(env, "C_IC_NA_1 requires 'value' as number (QOI, 0-255)").ThrowAsJavaScriptException();
                         CS101_ASDU_destroy(asdu);
@@ -765,7 +782,7 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     InterrogationCommand_destroy(ic);
                     break;
                 }
-                case C_CI_NA_1: { // Команда опроса счетчиков
+                case C_CI_NA_1: {
                     if (!cmdObj.Get("value").IsNumber()) {
                         Napi::TypeError::New(env, "C_CI_NA_1 requires 'value' as number (QCC, 0-255)").ThrowAsJavaScriptException();
                         CS101_ASDU_destroy(asdu);
@@ -783,15 +800,14 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     CounterInterrogationCommand_destroy(ci);
                     break;
                 }
-                case C_RD_NA_1: { // Команда чтения
-                    // Для C_RD_NA_1 значение не требуется, только IOA
+                case C_RD_NA_1: {
                     ReadCommand rd = ReadCommand_create(NULL, ioa);
                     CS101_ASDU_addInformationObject(asdu, (InformationObject)rd);
                     success = IMasterConnection_sendASDU(targetConnection, asdu);
                     ReadCommand_destroy(rd);
                     break;
                 }
-                case C_CS_NA_1: { // Команда синхронизации времени
+                case C_CS_NA_1: {
                     if (!cmdObj.Has("timestamp") || !cmdObj.Get("timestamp").IsNumber()) {
                         Napi::TypeError::New(env, "C_CS_NA_1 requires 'timestamp' (number)").ThrowAsJavaScriptException();
                         CS101_ASDU_destroy(asdu);
@@ -804,28 +820,41 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     ClockSynchronizationCommand_destroy(cs);
                     break;
                 }
-
                 default:
-                    printf("Unsupported command type: %d, serverID: %s, serverId: %i, clientId: %i\n", typeId, serverID.c_str(), serverId, targetClientId);
+                    printf("Unsupported command type: %d, serverID: %s, clientId: %i\n", typeId, serverID.c_str(), targetClientId);
+                    fflush(stdout);
                     CS101_ASDU_destroy(asdu);
                     allSuccess = false;
                     continue;
+            }
+
+            if (!success && !ipReserve.empty() && !useReserve) {
+                printf("Failed to send command on primary IP, switching to reserve IP: %s, serverID: %s, clientId: %i\n", ipReserve.c_str(), serverID.c_str(), targetClientId);
+                fflush(stdout);
+                useReserve = true;
+                CS104_Slave_setLocalAddress(server, ipReserve.c_str());
+                CS104_Slave_stop(server);
+                CS104_Slave_start(server);
+                success = IMasterConnection_sendASDU(targetConnection, asdu);
             }
 
             CS101_ASDU_destroy(asdu);
 
             if (!success) {
                 allSuccess = false;
-                printf("Failed to send command: typeId=%d, ioa=%d, bselCmd=%d, ql=%d, serverID: %s, serverId: %i, clientId: %i\n", 
-                       typeId, ioa, bselCmd, ql, serverID.c_str(), serverId, targetClientId);
+                printf("Failed to send command: typeId=%d, ioa=%d, asduAddress=%d, bselCmd=%d, ql=%d, serverID: %s, clientId: %i\n",
+                       typeId, ioa, asduAddress, bselCmd, ql, serverID.c_str(), targetClientId);
+                fflush(stdout);
             } else {
-                printf("Sent command: typeId=%d, ioa=%d, bselCmd=%d, ql=%d, serverID: %s, serverId: %i, clientId: %i\n", 
-                       typeId, ioa, bselCmd, ql, serverID.c_str(), serverId, targetClientId);
+                printf("Sent command: typeId=%d, ioa=%d, asduAddress=%d, bselCmd=%d, ql=%d, serverID: %s, clientId: %i\n",
+                       typeId, ioa, asduAddress, bselCmd, ql, serverID.c_str(), targetClientId);
+                fflush(stdout);
             }
         }
         return Napi::Boolean::New(env, allSuccess);
     } catch (const std::exception& e) {
-        printf("Exception in SendCommands: %s, serverID: %s, serverId: %i\n", e.what(), serverID.c_str(), serverId);
+        printf("Exception in SendCommands: %s, serverID: %s\n", e.what(), serverID.c_str());
+        fflush(stdout);
         Napi::Error::New(env, string("SendCommands failed: ") + e.what()).ThrowAsJavaScriptException();
         return Napi::Boolean::New(env, false);
     }
@@ -836,9 +865,8 @@ Napi::Value IEC104Server::GetStatus(const Napi::CallbackInfo& info) {
     std::lock_guard<std::mutex> lock(connMutex);
     Napi::Object status = Napi::Object::New(env);
     status.Set("started", Napi::Boolean::New(env, started));
-    status.Set("serverId", Napi::Number::New(env, serverId));
     status.Set("serverID", Napi::String::New(env, serverID));
-    status.Set("asduAddress", Napi::Number::New(env, asduAddress)); // Добавляем asduAddress в статус
+    status.Set("ipReserve", Napi::String::New(env, ipReserve));
 
     Napi::Array clients = Napi::Array::New(env, clientConnections.size());
     int index = 0;
@@ -852,7 +880,8 @@ Napi::Value IEC104Server::GetStatus(const Napi::CallbackInfo& info) {
 
 bool IEC104Server::ConnectionRequestHandler(void* parameter, const char* ipAddress) {
     IEC104Server* server = static_cast<IEC104Server*>(parameter);
-    printf("Connection request from %s, serverID: %s, serverId: %i\n", ipAddress, server->serverID.c_str(), server->serverId);
+    printf("Connection request from %s, serverID: %s\n", ipAddress, server->serverID.c_str());
+    fflush(stdout);
     return true; // Accept all connections
 }
 
@@ -896,7 +925,8 @@ void IEC104Server::ConnectionEventHandler(void* parameter, IMasterConnection con
         }
     }
 
-    printf("Connection event: %s, reason: %s, serverID: %s, serverId: %i, clientId: %i\n", eventStr.c_str(), reason.c_str(), server->serverID.c_str(), server->serverId, clientId);
+    printf("Connection event: %s, reason: %s, serverID: %s, clientId: %i\n", eventStr.c_str(), reason.c_str(), server->serverID.c_str(), clientId);
+    fflush(stdout);
 
     server->tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
         Napi::Object eventObj = Napi::Object::New(env);
@@ -913,7 +943,7 @@ bool IEC104Server::RawMessageHandler(void* parameter, IMasterConnection connecti
     IEC104Server* server = static_cast<IEC104Server*>(parameter);
     IEC60870_5_TypeID typeID = CS101_ASDU_getTypeID(asdu);
     int numberOfElements = CS101_ASDU_getNumberOfElements(asdu);
-    int receivedAsduAddress = CS101_ASDU_getCA(asdu); // Получаем адрес ASDU из полученного сообщения
+    int receivedAsduAddress = CS101_ASDU_getCA(asdu);
     int clientId = -1;
 
     {
@@ -921,7 +951,8 @@ bool IEC104Server::RawMessageHandler(void* parameter, IMasterConnection connecti
         if (server->clientConnections.find(connection) != server->clientConnections.end()) {
             clientId = server->clientConnections[connection];
         } else {
-            printf("Received message from unknown client, serverID: %s, serverId: %i\n", server->serverID.c_str(), server->serverId);
+            printf("Received message from unknown client, serverID: %s\n", server->serverID.c_str());
+            fflush(stdout);
             return false;
         }
     }
@@ -944,7 +975,6 @@ bool IEC104Server::RawMessageHandler(void* parameter, IMasterConnection connecti
                 }
                 break;
             }
-
             case C_DC_NA_1: {
                 for (int i = 0; i < numberOfElements; i++) {
                     DoubleCommand io = (DoubleCommand)CS101_ASDU_getElement(asdu, i);
@@ -959,7 +989,6 @@ bool IEC104Server::RawMessageHandler(void* parameter, IMasterConnection connecti
                 }
                 break;
             }
-
             case C_RC_NA_1: {
                 for (int i = 0; i < numberOfElements; i++) {
                     StepCommand io = (StepCommand)CS101_ASDU_getElement(asdu, i);
@@ -974,7 +1003,6 @@ bool IEC104Server::RawMessageHandler(void* parameter, IMasterConnection connecti
                 }
                 break;
             }
-
             case C_SE_NA_1: {
                 for (int i = 0; i < numberOfElements; i++) {
                     SetpointCommandNormalized io = (SetpointCommandNormalized)CS101_ASDU_getElement(asdu, i);
@@ -989,7 +1017,6 @@ bool IEC104Server::RawMessageHandler(void* parameter, IMasterConnection connecti
                 }
                 break;
             }
-
             case C_SE_NB_1: {
                 for (int i = 0; i < numberOfElements; i++) {
                     SetpointCommandScaled io = (SetpointCommandScaled)CS101_ASDU_getElement(asdu, i);
@@ -1004,7 +1031,6 @@ bool IEC104Server::RawMessageHandler(void* parameter, IMasterConnection connecti
                 }
                 break;
             }
-
             case C_SE_NC_1: {
                 for (int i = 0; i < numberOfElements; i++) {
                     SetpointCommandShort io = (SetpointCommandShort)CS101_ASDU_getElement(asdu, i);
@@ -1019,7 +1045,6 @@ bool IEC104Server::RawMessageHandler(void* parameter, IMasterConnection connecti
                 }
                 break;
             }
-
             case C_BO_NA_1: {
                 for (int i = 0; i < numberOfElements; i++) {
                     Bitstring32Command io = (Bitstring32Command)CS101_ASDU_getElement(asdu, i);
@@ -1034,7 +1059,6 @@ bool IEC104Server::RawMessageHandler(void* parameter, IMasterConnection connecti
                 }
                 break;
             }
-
             case C_SC_TA_1: {
                 for (int i = 0; i < numberOfElements; i++) {
                     SingleCommandWithCP56Time2a io = (SingleCommandWithCP56Time2a)CS101_ASDU_getElement(asdu, i);
@@ -1049,7 +1073,6 @@ bool IEC104Server::RawMessageHandler(void* parameter, IMasterConnection connecti
                 }
                 break;
             }
-
             case C_DC_TA_1: {
                 for (int i = 0; i < numberOfElements; i++) {
                     DoubleCommandWithCP56Time2a io = (DoubleCommandWithCP56Time2a)CS101_ASDU_getElement(asdu, i);
@@ -1064,7 +1087,6 @@ bool IEC104Server::RawMessageHandler(void* parameter, IMasterConnection connecti
                 }
                 break;
             }
-
             case C_RC_TA_1: {
                 for (int i = 0; i < numberOfElements; i++) {
                     StepCommandWithCP56Time2a io = (StepCommandWithCP56Time2a)CS101_ASDU_getElement(asdu, i);
@@ -1079,7 +1101,6 @@ bool IEC104Server::RawMessageHandler(void* parameter, IMasterConnection connecti
                 }
                 break;
             }
-
             case C_SE_TA_1: {
                 for (int i = 0; i < numberOfElements; i++) {
                     SetpointCommandNormalizedWithCP56Time2a io = (SetpointCommandNormalizedWithCP56Time2a)CS101_ASDU_getElement(asdu, i);
@@ -1094,7 +1115,6 @@ bool IEC104Server::RawMessageHandler(void* parameter, IMasterConnection connecti
                 }
                 break;
             }
-
             case C_SE_TB_1: {
                 for (int i = 0; i < numberOfElements; i++) {
                     SetpointCommandScaledWithCP56Time2a io = (SetpointCommandScaledWithCP56Time2a)CS101_ASDU_getElement(asdu, i);
@@ -1109,7 +1129,6 @@ bool IEC104Server::RawMessageHandler(void* parameter, IMasterConnection connecti
                 }
                 break;
             }
-
             case C_SE_TC_1: {
                 for (int i = 0; i < numberOfElements; i++) {
                     SetpointCommandShortWithCP56Time2a io = (SetpointCommandShortWithCP56Time2a)CS101_ASDU_getElement(asdu, i);
@@ -1124,7 +1143,6 @@ bool IEC104Server::RawMessageHandler(void* parameter, IMasterConnection connecti
                 }
                 break;
             }
-
             case C_BO_TA_1: {
                 for (int i = 0; i < numberOfElements; i++) {
                     Bitstring32CommandWithCP56Time2a io = (Bitstring32CommandWithCP56Time2a)CS101_ASDU_getElement(asdu, i);
@@ -1139,7 +1157,6 @@ bool IEC104Server::RawMessageHandler(void* parameter, IMasterConnection connecti
                 }
                 break;
             }
-
             case C_IC_NA_1: {
                 for (int i = 0; i < numberOfElements; i++) {
                     InterrogationCommand io = (InterrogationCommand)CS101_ASDU_getElement(asdu, i);
@@ -1154,7 +1171,6 @@ bool IEC104Server::RawMessageHandler(void* parameter, IMasterConnection connecti
                 }
                 break;
             }
-
             case C_CI_NA_1: {
                 for (int i = 0; i < numberOfElements; i++) {
                     CounterInterrogationCommand io = (CounterInterrogationCommand)CS101_ASDU_getElement(asdu, i);
@@ -1169,7 +1185,6 @@ bool IEC104Server::RawMessageHandler(void* parameter, IMasterConnection connecti
                 }
                 break;
             }
-
             case C_RD_NA_1: {
                 for (int i = 0; i < numberOfElements; i++) {
                     ReadCommand io = (ReadCommand)CS101_ASDU_getElement(asdu, i);
@@ -1184,7 +1199,6 @@ bool IEC104Server::RawMessageHandler(void* parameter, IMasterConnection connecti
                 }
                 break;
             }
-
             case C_CS_NA_1: {
                 for (int i = 0; i < numberOfElements; i++) {
                     ClockSynchronizationCommand io = (ClockSynchronizationCommand)CS101_ASDU_getElement(asdu, i);
@@ -1199,15 +1213,17 @@ bool IEC104Server::RawMessageHandler(void* parameter, IMasterConnection connecti
                 }
                 break;
             }
-
             default:
-                printf("Received unsupported ASDU type: %s (%i), serverID: %s, serverId: %i, clientId: %i, asduAddress: %d\n", TypeID_toString(typeID), typeID, server->serverID.c_str(), server->serverId, clientId, receivedAsduAddress);
+                printf("Received unsupported ASDU type: %s (%i), serverID: %s, clientId: %i, asduAddress: %d\n",
+                       TypeID_toString(typeID), typeID, server->serverID.c_str(), clientId, receivedAsduAddress);
+                fflush(stdout);
                 return false;
         }
 
         for (const auto& [ioa, val, quality, timestamp] : elements) {
-            printf("ASDU type: %s, serverID: %s, serverId: %i, clientId: %i, asduAddress: %d, ioa: %i, value: %f, quality: %u, timestamp: %" PRIu64 ", cnt: %i\n",
-                   TypeID_toString(typeID), server->serverID.c_str(), server->serverId, clientId, receivedAsduAddress, ioa, val, quality, timestamp, server->cnt);
+            printf("ASDU type: %s, serverID: %s, clientId: %i, asduAddress: %d, ioa: %i, value: %f, quality: %u, timestamp: %" PRIu64 ", cnt: %i\n",
+                   TypeID_toString(typeID), server->serverID.c_str(), clientId, receivedAsduAddress, ioa, val, quality, timestamp, server->cnt);
+            fflush(stdout);
         }
 
         server->tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
@@ -1218,7 +1234,7 @@ bool IEC104Server::RawMessageHandler(void* parameter, IMasterConnection connecti
                 msg.Set("serverID", Napi::String::New(env, server->serverID));
                 msg.Set("clientId", Napi::Number::New(env, clientId));
                 msg.Set("typeId", Napi::Number::New(env, typeID));
-                msg.Set("asduAddress", Napi::Number::New(env, receivedAsduAddress)); // Добавляем asduAddress в сообщение
+                msg.Set("asduAddress", Napi::Number::New(env, receivedAsduAddress));
                 msg.Set("ioa", Napi::Number::New(env, ioa));
                 msg.Set("val", Napi::Number::New(env, val));
                 msg.Set("quality", Napi::Number::New(env, quality));
@@ -1233,15 +1249,17 @@ bool IEC104Server::RawMessageHandler(void* parameter, IMasterConnection connecti
 
         return true;
     } catch (const std::exception& e) {
-        printf("Exception in RawMessageHandler: %s, serverID: %s, serverId: %i, clientId: %i, asduAddress: %d\n", e.what(), server->serverID.c_str(), server->serverId, clientId, receivedAsduAddress); 
-        server->tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) { 
-            Napi::Object eventObj = Napi::Object::New(env); 
-            eventObj.Set("serverID", Napi::String::New(env, server->serverID)); 
-            eventObj.Set("clientId", Napi::Number::New(env, clientId)); 
-            eventObj.Set("type", Napi::String::New(env, "error")); 
-            eventObj.Set("reason", Napi::String::New(env, string("Обработка ASDU не удалась: ") + e.what())); 
-            jsCallback.Call({Napi::String::New(env, "data"), eventObj}); 
-        }); 
-        return false; 
-    } 
+        printf("Exception in RawMessageHandler: %s, serverID: %s, clientId: %i, asduAddress: %d\n",
+               e.what(), server->serverID.c_str(), clientId, receivedAsduAddress);
+        fflush(stdout);
+        server->tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
+            Napi::Object eventObj = Napi::Object::New(env);
+            eventObj.Set("serverID", Napi::String::New(env, server->serverID));
+            eventObj.Set("clientId", Napi::Number::New(env, clientId));
+            eventObj.Set("type", Napi::String::New(env, "error"));
+            eventObj.Set("reason", Napi::String::New(env, string("Обработка ASDU не удалась: ") + e.what()));
+            jsCallback.Call({Napi::String::New(env, "data"), eventObj});
+        });
+        return false;
+    }
 }

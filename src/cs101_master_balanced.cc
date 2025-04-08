@@ -129,21 +129,34 @@ Napi::Value IEC101MasterBalanced::Connect(const CallbackInfo &info)
 {
     Napi::Env env = info.Env();
 
-    if (info.Length() < 4 || !info[0].IsString() || !info[1].IsNumber() || !info[2].IsNumber() || !info[3].IsString()) {
-        Napi::TypeError::New(env, "Expected port (string), baudRate (number), clientId (number), clientID (string), [params (object)]").ThrowAsJavaScriptException();
+    // Проверяем, что передан один аргумент — объект с параметрами
+    if (info.Length() < 1 || !info[0].IsObject()) {
+        Napi::TypeError::New(env, "Expected an object with { portName (string), baudRate (number), clientId (number), clientID (string), [params (object)] }").ThrowAsJavaScriptException();
         return env.Undefined();
     }
 
-    std::string portName = info[0].As<String>();
-    int baudRate = info[1].As<Number>().Int32Value();
-    clientId = info[2].As<Number>().Int32Value();
-    clientID = info[3].As<String>();
+    Napi::Object config = info[0].As<Napi::Object>();
+
+    // Извлекаем обязательные параметры из объекта
+    if (!config.Has("portName") || !config.Get("portName").IsString() ||
+        !config.Has("baudRate") || !config.Get("baudRate").IsNumber() ||
+        !config.Has("clientId") || !config.Get("clientId").IsNumber() ||
+        !config.Has("clientID") || !config.Get("clientID").IsString()) {
+        Napi::TypeError::New(env, "Object must contain 'portName' (string), 'baudRate' (number), 'clientId' (number), and 'clientID' (string)").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+
+    std::string portName = config.Get("portName").As<String>().Utf8Value();
+    int baudRate = config.Get("baudRate").As<Number>().Int32Value();
+    clientId = config.Get("clientId").As<Number>().Int32Value();
+    clientID = config.Get("clientID").As<String>().Utf8Value();
 
     if (portName.empty() || baudRate <= 0 || clientID.empty()) {
-        Napi::Error::New(env, "Invalid port, baud rate, or clientID").ThrowAsJavaScriptException();
+        Napi::Error::New(env, "Invalid 'portName', 'baudRate', or 'clientID'").ThrowAsJavaScriptException();
         return env.Undefined();
     }
 
+    // Проверяем, запущен ли клиент
     {
         std::lock_guard<std::mutex> lock(connMutex);
         if (running) {
@@ -152,6 +165,7 @@ Napi::Value IEC101MasterBalanced::Connect(const CallbackInfo &info)
         }
     }
 
+    // Параметры по умолчанию
     int linkAddress = 1;
     int originatorAddress = 1;
     int k = 12;
@@ -164,11 +178,12 @@ Napi::Value IEC101MasterBalanced::Connect(const CallbackInfo &info)
     int maxRetries = 10;
     int queueSize = 100;
 
-    if (info.Length() > 4 && info[4].IsObject()) {
-        Napi::Object params = info[4].As<Napi::Object>();
+    // Извлекаем дополнительные параметры, если передан объект params
+    if (config.Has("params") && config.Get("params").IsObject()) {
+        Napi::Object params = config.Get("params").As<Napi::Object>();
         if (params.Has("linkAddress")) linkAddress = params.Get("linkAddress").As<Number>().Int32Value();
         if (params.Has("originatorAddress")) originatorAddress = params.Get("originatorAddress").As<Number>().Int32Value();
-        if (params.Has("asduAddress")) asduAddress = params.Get("asduAddress").As<Number>().Int32Value(); // Извлечение asduAddress
+        if (params.Has("asduAddress")) asduAddress = params.Get("asduAddress").As<Number>().Int32Value();
         if (params.Has("k")) k = params.Get("k").As<Number>().Int32Value();
         if (params.Has("w")) w = params.Get("w").As<Number>().Int32Value();
         if (params.Has("t0")) t0 = params.Get("t0").As<Number>().Int32Value();
@@ -187,7 +202,7 @@ Napi::Value IEC101MasterBalanced::Connect(const CallbackInfo &info)
             Napi::Error::New(env, "originatorAddress must be 0-255").ThrowAsJavaScriptException();
             return env.Undefined();
         }
-        if (asduAddress < 0 || asduAddress > 65535) { // Ограничение для ASDU адреса (2 байта)
+        if (asduAddress < 0 || asduAddress > 65535) {
             Napi::Error::New(env, "asduAddress must be 0-65535").ThrowAsJavaScriptException();
             return env.Undefined();
         }
@@ -211,6 +226,7 @@ Napi::Value IEC101MasterBalanced::Connect(const CallbackInfo &info)
 
     try {
         printf("Creating serial connection to %s, baudRate: %d, clientID: %s, clientId: %i\n", portName.c_str(), baudRate, clientID.c_str(), clientId);
+        fflush(stdout);
         serialPort = SerialPort_create(portName.c_str(), baudRate, 8, 'E', 1);
         if (!serialPort) {
             throw runtime_error("Failed to create serial port object");
@@ -218,8 +234,8 @@ Napi::Value IEC101MasterBalanced::Connect(const CallbackInfo &info)
 
         // Создаём структуру параметров канального уровня
         struct sLinkLayerParameters llParams;
-        llParams.addressLength = 1; // Значение по умолчанию из cs101_master.c
-        llParams.timeoutForAck = t1 * 1000; // Переводим в миллисекунды
+        llParams.addressLength = 1;
+        llParams.timeoutForAck = t1 * 1000;
         llParams.timeoutRepeat = t2 * 1000;
         llParams.timeoutLinkState = t0 * 1000;
         llParams.useSingleCharACK = true;
@@ -234,7 +250,8 @@ Napi::Value IEC101MasterBalanced::Connect(const CallbackInfo &info)
         alParams.sizeOfIOA = 3;
         alParams.maxSizeOfASDU = 249;
 
-        // Создаём мастер
+        printf("Creating master object with queueSize: %d, clientID: %s, clientId: %i\n", queueSize, clientID.c_str(), clientId);
+        fflush(stdout);
         master = CS101_Master_createEx(serialPort, &llParams, &alParams, IEC60870_LINK_LAYER_BALANCED, queueSize);
         if (!master) {
             SerialPort_destroy(serialPort);
@@ -250,95 +267,116 @@ Napi::Value IEC101MasterBalanced::Connect(const CallbackInfo &info)
 
         printf("Connecting with params: linkAddress=%d, originatorAddress=%d, asduAddress=%d, k=%d, w=%d, t0=%d, t1=%d, t2=%d, t3=%d, reconnectDelay=%d, maxRetries=%d, queueSize=%d, clientID: %s, clientId: %i\n",
                linkAddress, originatorAddress, asduAddress, k, w, t0, t1, t2, t3, reconnectDelay, maxRetries, queueSize, clientID.c_str(), clientId);
+        fflush(stdout);
 
         running = true;
-        _thread = std::thread([this, portName, baudRate, linkAddress, originatorAddress, t0, t1, t2, reconnectDelay, maxRetries, queueSize] {
+        _thread = std::thread([this, portName, baudRate, linkAddress, originatorAddress, t0, t1, t2, reconnectDelay, maxRetries, queueSize]() {
             try {
                 int retryCount = 0;
                 while (running && retryCount <= maxRetries) {
-                    SerialPort_open(serialPort);
-                    CS101_Master_start(master);
-                    {
-                        std::lock_guard<std::mutex> lock(connMutex);
-                        connected = true;
-                        activated = true; // В Balanced Mode активация автоматическая
-                    }
                     printf("Attempting to connect (attempt %d/%d), clientID: %s, clientId: %i\n", retryCount + 1, maxRetries + 1, clientID.c_str(), clientId);
-
-                    while (running) {
-                        CS101_Master_run(master);
-                        Thread_sleep(100);
-                        std::lock_guard<std::mutex> lock(connMutex);
-                        if (!connected) break;
-                    }
-
-                    std::lock_guard<std::mutex> lock(connMutex);
-                    if (running && !connected) {
-                        printf("Connection lost, preparing to reconnect, clientID: %s, clientId: %i\n", clientID.c_str(), clientId);
-                        CS101_Master_stop(master);
-                        CS101_Master_destroy(master);
-                        SerialPort_destroy(serialPort);
-
-                        serialPort = SerialPort_create(portName.c_str(), baudRate, 8, 'E', 1);
-                        if (!serialPort) {
-                            throw runtime_error("Failed to recreate serial port object for reconnect");
+                    fflush(stdout);
+                    bool connectSuccess = SerialPort_open(serialPort);
+                    if (connectSuccess) {
+                        printf("Serial port opened successfully, starting master, clientID: %s, clientId: %i\n", clientID.c_str(), clientId);
+                        fflush(stdout);
+                        CS101_Master_start(master);
+                        {
+                            std::lock_guard<std::mutex> lock(connMutex);
+                            connected = true;
+                            activated = true; // В Balanced Mode активация автоматическая
                         }
 
-                        struct sLinkLayerParameters llParams;
-                        llParams.addressLength = 1;
-                        llParams.timeoutForAck = t1 * 1000;
-                        llParams.timeoutRepeat = t2 * 1000;
-                        llParams.timeoutLinkState = t0 * 1000;
-                        llParams.useSingleCharACK = true;
+                        while (running) {
+                            CS101_Master_run(master);
+                            Thread_sleep(100);
+                            {
+                                std::lock_guard<std::mutex> lock(this->connMutex);
+                                if (!connected) break;
+                            }
+                        }
 
-                        struct sCS101_AppLayerParameters alParams;
-                        alParams.sizeOfTypeId = 1;
-                        alParams.sizeOfVSQ = 1;
-                        alParams.sizeOfCOT = 2;
-                        alParams.originatorAddress = originatorAddress;
-                        alParams.sizeOfCA = 2;
-                        alParams.sizeOfIOA = 3;
-                        alParams.maxSizeOfASDU = 249;
-
-                        master = CS101_Master_createEx(serialPort, &llParams, &alParams, IEC60870_LINK_LAYER_BALANCED, queueSize);
-                        if (!master) {
+                        std::lock_guard<std::mutex> lock(this->connMutex);
+                        if (running && !connected) {
+                            printf("Connection lost, preparing to reconnect, clientID: %s, clientId: %i\n", clientID.c_str(), clientId);
+                            fflush(stdout);
+                            CS101_Master_stop(master);
+                            CS101_Master_destroy(master);
                             SerialPort_destroy(serialPort);
-                            throw runtime_error("Failed to recreate master object for reconnect");
+
+                            printf("Recreating serial port and master, clientID: %s, clientId: %i\n", clientID.c_str(), clientId);
+                            fflush(stdout);
+                            serialPort = SerialPort_create(portName.c_str(), baudRate, 8, 'E', 1);
+                            if (!serialPort) {
+                                printf("Failed to recreate serial port object, clientID: %s, clientId: %i\n", clientID.c_str(), clientId);
+                                fflush(stdout);
+                                throw runtime_error("Failed to recreate serial port object for reconnect");
+                            }
+
+                            struct sLinkLayerParameters llParams;
+                            llParams.addressLength = 1;
+                            llParams.timeoutForAck = t1 * 1000;
+                            llParams.timeoutRepeat = t2 * 1000;
+                            llParams.timeoutLinkState = t0 * 1000;
+                            llParams.useSingleCharACK = true;
+
+                            struct sCS101_AppLayerParameters alParams;
+                            alParams.sizeOfTypeId = 1;
+                            alParams.sizeOfVSQ = 1;
+                            alParams.sizeOfCOT = 2;
+                            alParams.originatorAddress = originatorAddress;
+                            alParams.sizeOfCA = 2;
+                            alParams.sizeOfIOA = 3;
+                            alParams.maxSizeOfASDU = 249;
+
+                            master = CS101_Master_createEx(serialPort, &llParams, &alParams, IEC60870_LINK_LAYER_BALANCED, queueSize);
+                            if (!master) {
+                                SerialPort_destroy(serialPort);
+                                printf("Failed to recreate master object, clientID: %s, clientId: %i\n", clientID.c_str(), clientId);
+                                fflush(stdout);
+                                throw runtime_error("Failed to recreate master object for reconnect");
+                            }
+
+                            CS101_Master_setASDUReceivedHandler(master, RawMessageHandler, this);
+                            CS101_Master_setLinkLayerStateChanged(master, LinkLayerStateChanged, this);
+                            CS101_Master_setDIR(master, true);
+                            CS101_Master_setOwnAddress(master, linkAddress);
+                            CS101_Master_useSlaveAddress(master, linkAddress);
+                        } else if (!running && connected) {
+                            printf("Thread stopped by client, closing connection, clientID: %s, clientId: %i\n", clientID.c_str(), clientId);
+                            fflush(stdout);
+                            CS101_Master_stop(master);
+                            CS101_Master_destroy(master);
+                            SerialPort_destroy(serialPort);
+                            connected = false;
+                            activated = false;
+                            return;
                         }
-
-                        CS101_Master_setASDUReceivedHandler(master, RawMessageHandler, this);
-                        CS101_Master_setLinkLayerStateChanged(master, LinkLayerStateChanged, this);
-                        CS101_Master_setDIR(master, true);
-                        CS101_Master_setOwnAddress(master, linkAddress);
-                        CS101_Master_useSlaveAddress(master, linkAddress);
-                    } else if (!running && connected) {
-                        printf("Thread stopped by client, closing connection, clientID: %s, clientId: %i\n", clientID.c_str(), clientId);
-                        CS101_Master_stop(master);
-                        CS101_Master_destroy(master);
-                        SerialPort_destroy(serialPort);
-                        connected = false;
-                        activated = false;
-                        return;
-                    }
-
-                    if (running && !connected) {
-                        retryCount++;
-                        printf("Reconnection attempt %d/%d failed, retrying in %d seconds, clientID: %s, clientId: %i\n", retryCount, maxRetries, reconnectDelay, clientID.c_str(), clientId);
+                    } else {
+                        printf("Serial port failed to open, clientID: %s, clientId: %i\n", clientID.c_str(), clientId);
+                        fflush(stdout);
                         tsfn.NonBlockingCall([=](Napi::Env env, Function jsCallback) {
                             Object eventObj = Object::New(env);
                             eventObj.Set("clientID", String::New(env, clientID.c_str()));
                             eventObj.Set("type", String::New(env, "control"));
                             eventObj.Set("event", String::New(env, "reconnecting"));
-                            eventObj.Set("reason", String::New(env, string("attempt ") + to_string(retryCount) + " of " + to_string(maxRetries)));
+                            eventObj.Set("reason", String::New(env, string("attempt ") + to_string(retryCount + 1) + " of " + to_string(maxRetries + 1)));
                             std::vector<napi_value> args = {String::New(env, "data"), eventObj};
                             jsCallback.Call(args);
                         });
+                    }
+
+                    if (running && !connected) {
+                        retryCount++;
+                        printf("Reconnection attempt %d/%d failed, retrying in %d seconds, clientID: %s, clientId: %i\n", retryCount, maxRetries + 1, reconnectDelay, clientID.c_str(), clientId);
+                        fflush(stdout);
                         Thread_sleep(reconnectDelay * 1000);
                     }
 
                     if (retryCount >= maxRetries) {
-                        running = false;
                         printf("Max reconnection attempts reached, giving up, clientID: %s, clientId: %i\n", clientID.c_str(), clientId);
+                        fflush(stdout);
+                        running = false;
                         tsfn.NonBlockingCall([=](Napi::Env env, Function jsCallback) {
                             Object eventObj = Object::New(env);
                             eventObj.Set("clientID", String::New(env, clientID.c_str()));
@@ -353,7 +391,8 @@ Napi::Value IEC101MasterBalanced::Connect(const CallbackInfo &info)
                 }
             } catch (const std::exception& e) {
                 printf("Exception in connection thread: %s, clientID: %s, clientId: %i\n", e.what(), clientID.c_str(), clientId);
-                std::lock_guard<std::mutex> lock(connMutex);
+                fflush(stdout);
+                std::lock_guard<std::mutex> lock(this->connMutex);
                 running = false;
                 if (connected) {
                     CS101_Master_stop(master);
@@ -377,6 +416,7 @@ Napi::Value IEC101MasterBalanced::Connect(const CallbackInfo &info)
         return env.Undefined();
     } catch (const std::exception& e) {
         printf("Exception in Connect: %s, clientID: %s, clientId: %i\n", e.what(), clientID.c_str(), clientId);
+        fflush(stdout);
         Napi::Error::New(env, string("Connect failed: ") + e.what()).ThrowAsJavaScriptException();
         return env.Undefined();
     }

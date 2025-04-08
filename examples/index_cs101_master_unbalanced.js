@@ -1,4 +1,4 @@
-const { IEC101MasterUnbalanced } = require('./builds/macos_arm64/addon_iec60870');
+const { IEC101MasterUnbalanced } = require('../build/Release/addon_iec60870');
 const util = require('util');
 
 let isInitialized = false;
@@ -50,17 +50,22 @@ async function main() {
 
     try {
         console.log('Starting IEC 60870-5-101 master in unbalanced mode...');
-        master.connect('/dev/tty.usbserial-A505KXKT', 19200, 'cs101_master_1', {
-            linkAddress: 1,
-            originatorAddress: 1,
-            asduAddress: 1,
-            t0: 60,
-            t1: 30,
-            t2: 20,
-            reconnectDelay: 5,
-            queueSize: 100
+        master.connect({
+            portName: "/dev/tty.usbserial-A505KXKT",
+            baudRate: 19200,
+            clientID: "cs101_master_1",
+            params: {
+                linkAddress: 1,
+                originatorAddress: 1,
+                asduAddress: 1,
+                t0: 30,
+                t1: 15,
+                t2: 10,
+                reconnectDelay: 5,
+                queueSize: 100
+            }
         });
-
+       
         await sleep(1000);
         const status = master.getStatus();
         console.log(`Initial Status: ${util.inspect(status)}`);

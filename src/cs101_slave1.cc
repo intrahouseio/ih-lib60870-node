@@ -38,7 +38,6 @@ IEC101Slave::IEC101Slave(const Napi::CallbackInfo& info) : Napi::ObjectWrap<IEC1
 
     Napi::Function emit = info[0].As<Napi::Function>();
     running = false;
-    asduAddress = 0; // Инициализация по умолчанию
 
     try {
         tsfn = Napi::ThreadSafeFunction::New(
@@ -112,7 +111,6 @@ Napi::Value IEC101Slave::Connect(const Napi::CallbackInfo& info) {
         Napi::Object params = info[4].As<Napi::Object>();
         if (params.Has("linkAddress")) linkAddress = params.Get("linkAddress").As<Napi::Number>().Int32Value();
         if (params.Has("originatorAddress")) originatorAddress = params.Get("originatorAddress").As<Napi::Number>().Int32Value();
-        if (params.Has("asduAddress")) asduAddress = params.Get("asduAddress").As<Napi::Number>().Int32Value(); // Извлечение asduAddress
         if (params.Has("t0")) t0 = params.Get("t0").As<Napi::Number>().Int32Value();
         if (params.Has("t1")) t1 = params.Get("t1").As<Napi::Number>().Int32Value();
         if (params.Has("t2")) t2 = params.Get("t2").As<Napi::Number>().Int32Value();
@@ -126,10 +124,6 @@ Napi::Value IEC101Slave::Connect(const Napi::CallbackInfo& info) {
         }
         if (originatorAddress < 0 || originatorAddress > 255) {
             Napi::Error::New(env, "originatorAddress must be 0-255").ThrowAsJavaScriptException();
-            return env.Undefined();
-        }
-        if (asduAddress < 0 || asduAddress > 65535) { // Ограничение для ASDU адреса (2 байта)
-            Napi::Error::New(env, "asduAddress must be 0-65535").ThrowAsJavaScriptException();
             return env.Undefined();
         }
         if (t0 <= 0 || t1 <= 0 || t2 <= 0) {
@@ -183,8 +177,8 @@ Napi::Value IEC101Slave::Connect(const Napi::CallbackInfo& info) {
         CS101_Slave_setLinkLayerStateChanged(slave, LinkLayerStateChanged, this);
         CS101_Slave_setLinkLayerAddress(slave, linkAddress);
 
-        printf("Connecting with params: linkAddress=%d, originatorAddress=%d, asduAddress=%d, t0=%d, t1=%d, t2=%d, reconnectDelay=%d, maxRetries=%d, queueSize=%d, clientID: %s, clientId: %i\n",
-               linkAddress, originatorAddress, asduAddress, t0, t1, t2, reconnectDelay, maxRetries, queueSize, clientID.c_str(), clientId);
+        printf("Connecting with params: linkAddress=%d, originatorAddress=%d, t0=%d, t1=%d, t2=%d, reconnectDelay=%d, maxRetries=%d, queueSize=%d, clientID: %s, clientId: %i\n",
+               linkAddress, originatorAddress, t0, t1, t2, reconnectDelay, maxRetries, queueSize, clientID.c_str(), clientId);
 
         running = true;
         _thread = std::thread([this, portName, baudRate, linkAddress, originatorAddress, t0, t1, t2, reconnectDelay, maxRetries, queueSize] {
@@ -373,7 +367,7 @@ Napi::Value IEC101Slave::SendCommands(const Napi::CallbackInfo& info) {
 
             int typeId = cmdObj.Get("typeId").As<Napi::Number>().Int32Value();
             int ioa = cmdObj.Get("ioa").As<Napi::Number>().Int32Value();
-            CS101_ASDU asdu = CS101_ASDU_create(alParams, false, CS101_COT_SPONTANEOUS, 0, this->asduAddress, false, false); // Используем asduAddress
+            CS101_ASDU asdu = CS101_ASDU_create(alParams, false, CS101_COT_SPONTANEOUS, 0, alParams->sizeOfCA == 1 ? ioa & 0xFF : ioa, false, false);
 
             bool success = false;
             switch (typeId) {
@@ -636,8 +630,7 @@ Napi::Value IEC101Slave::GetStatus(const Napi::CallbackInfo& info) {
     Napi::Object status = Napi::Object::New(env);
     status.Set("connected", Napi::Boolean::New(env, connected));
     status.Set("clientId", Napi::Number::New(env, clientId));
-    status.Set("clientID", Napi::String::New(env, clientID.c_str()));
-    status.Set("asduAddress", Napi::Number::New(env, asduAddress)); // Добавляем asduAddress в статус
+    status.Set("clientID", Napi::String::New(env, clientID));
     return status;
 }
 
@@ -690,7 +683,6 @@ bool IEC101Slave::RawMessageHandler(void* parameter, IMasterConnection connectio
     IEC101Slave* client = static_cast<IEC101Slave*>(parameter);
     IEC60870_5_TypeID typeID = CS101_ASDU_getTypeID(asdu);
     int numberOfElements = CS101_ASDU_getNumberOfElements(asdu);
-    int receivedAsduAddress = CS101_ASDU_getCA(asdu); // Получаем адрес ASDU из полученного сообщения
 
     client->masterConnection = connection;
 
@@ -719,8 +711,8 @@ bool IEC101Slave::RawMessageHandler(void* parameter, IMasterConnection connectio
         }
 
         for (const auto& [ioa, val, quality, timestamp] : elements) {
-            printf("ASDU type: %s, clientID: %s, clientId: %i, asduAddress: %d, ioa: %i, value: %f, quality: %u, timestamp: %" PRIu64 ", cnt: %i\n",
-                   TypeID_toString(typeID), client->clientID.c_str(), client->clientId, receivedAsduAddress, ioa, val, quality, timestamp, client->cnt);
+            printf("ASDU type: %s, clientID: %s, clientId: %i, ioa: %i, value: %f, quality: %u, timestamp: %" PRIu64 ", cnt: %i\n",
+                   TypeID_toString(typeID), client->clientID.c_str(), client->clientId, ioa, val, quality, timestamp, client->cnt);
         }
 
         client->tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
@@ -730,7 +722,6 @@ bool IEC101Slave::RawMessageHandler(void* parameter, IMasterConnection connectio
                 Napi::Object msg = Napi::Object::New(env);
                 msg.Set("clientID", Napi::String::New(env, client->clientID.c_str()));
                 msg.Set("typeId", Napi::Number::New(env, typeID));
-                msg.Set("asdu", Napi::Number::New(env, receivedAsduAddress)); // Добавляем полученный asduAddress
                 msg.Set("ioa", Napi::Number::New(env, ioa));
                 msg.Set("val", Napi::Number::New(env, val));
                 msg.Set("quality", Napi::Number::New(env, quality));

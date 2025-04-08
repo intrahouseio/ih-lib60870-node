@@ -483,7 +483,7 @@ Napi::Value IEC104Client::SendStopDT(const Napi::CallbackInfo& info) {
 }
 
 Napi::Value IEC104Client::SendCommands(const Napi::CallbackInfo& info) {
-    Napi::Env env = info.Env();
+   Napi::Env env = info.Env();
 
     if (info.Length() < 1 || !info[0].IsArray()) {
         Napi::TypeError::New(env, "Expected commands (array of objects with 'typeId', 'ioa', 'value', and optional fields)").ThrowAsJavaScriptException();
@@ -806,15 +806,27 @@ Napi::Value IEC104Client::SendCommands(const Napi::CallbackInfo& info) {
 
             if (!success) {
                 allSuccess = false;
-                printf("Failed to send command: typeId=%d, ioa=%d, clientID: %s\n", typeId, ioa, clientID.c_str());
+                printf("Failed to send command: typeId=%d, ioa=%d, clientID: %s, isPrimaryIP=%d\n", typeId, ioa, clientID.c_str(), usingPrimaryIp);
             } else {
-                printf("Sent command: typeId=%d, ioa=%d, bselCmd=%d, ql=%d, clientID: %s\n", typeId, ioa, bselCmd, ql, clientID.c_str());
+                printf("Sent command: typeId=%d, ioa=%d, bselCmd=%d, ql=%d, clientID: %s, isPrimaryIP=%d\n", typeId, ioa, bselCmd, ql, clientID.c_str(), usingPrimaryIp);
             }
         }
         return Napi::Boolean::New(env, allSuccess);
     } catch (const std::exception& e) {
-        printf("Exception in SendCommands: %s, clientID: %s\n", e.what(), clientID.c_str());
+        printf("Exception in SendCommands: %s, clientID: %s, isPrimaryIP=%d\n", e.what(), clientID.c_str(), usingPrimaryIp);
         Napi::Error::New(env, string("SendCommands failed: ") + e.what()).ThrowAsJavaScriptException();
+
+        // Добавляем isPrimaryIP в объект события
+        tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
+            Napi::Object eventObj = Napi::Object::New(env);
+            eventObj.Set("clientID", Napi::String::New(env, clientID.c_str()));
+            eventObj.Set("type", Napi::String::New(env, "error"));
+            eventObj.Set("reason", Napi::String::New(env, string("SendCommands failed: ") + e.what()));
+            eventObj.Set("isPrimaryIP", Napi::Boolean::New(env, usingPrimaryIp)); // Добавляем isPrimaryIP
+            std::vector<napi_value> args = {Napi::String::New(env, "data"), eventObj};
+            jsCallback.Call(args);
+        });
+
         return Napi::Boolean::New(env, false);
     }
 }
@@ -890,6 +902,7 @@ bool IEC104Client::RawMessageHandler(void* parameter, int address, CS101_ASDU as
     IEC60870_5_TypeID typeID = CS101_ASDU_getTypeID(asdu);
     int numberOfElements = CS101_ASDU_getNumberOfElements(asdu);
     int receivedAsduAddress = CS101_ASDU_getCA(asdu); // Получаем адрес ASDU из полученного сообщения
+    bool isPrimaryIP = client->usingPrimaryIp; // Уже есть в коде
 
     try {
         vector<tuple<int, double, uint8_t, uint64_t>> elements;
@@ -1125,8 +1138,8 @@ bool IEC104Client::RawMessageHandler(void* parameter, int address, CS101_ASDU as
         }
 
         for (const auto& [ioa, val, quality, timestamp] : elements) {
-            printf("ASDU type: %s, clientID: %s, asduAddress: %d, ioa: %i, value: %f, quality: %u, timestamp: %" PRIu64 ", cnt: %i\n",
-                   TypeID_toString(typeID), client->clientID.c_str(), receivedAsduAddress, ioa, val, quality, timestamp, client->cnt);
+            printf("ASDU type: %s, clientID: %s, asduAddress: %d, ioa: %i, value: %f, quality: %u, timestamp: %" PRIu64 ", cnt: %i, isPrimaryIP=%d\n",
+                   TypeID_toString(typeID), client->clientID.c_str(), receivedAsduAddress, ioa, val, quality, timestamp, client->cnt, isPrimaryIP);
         }
 
         client->tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
@@ -1136,10 +1149,11 @@ bool IEC104Client::RawMessageHandler(void* parameter, int address, CS101_ASDU as
                 Napi::Object msg = Napi::Object::New(env);
                 msg.Set("clientID", Napi::String::New(env, client->clientID.c_str()));
                 msg.Set("typeId", Napi::Number::New(env, typeID));
-                msg.Set("asdu", Napi::Number::New(env, receivedAsduAddress)); // Добавляем asduAddress в сообщение
+                msg.Set("asdu", Napi::Number::New(env, receivedAsduAddress));
                 msg.Set("ioa", Napi::Number::New(env, ioa));
                 msg.Set("val", Napi::Number::New(env, val));
                 msg.Set("quality", Napi::Number::New(env, quality));
+                msg.Set("isPrimaryIP", Napi::Boolean::New(env, isPrimaryIP)); // Добавляем isPrimaryIP
                 if (timestamp > 0) {
                     msg.Set("timestamp", Napi::Number::New(env, static_cast<double>(timestamp)));
                 }
@@ -1152,12 +1166,13 @@ bool IEC104Client::RawMessageHandler(void* parameter, int address, CS101_ASDU as
 
         return true;
     } catch (const std::exception& e) {
-        printf("Exception in RawMessageHandler: %s, clientID: %s\n", e.what(), client->clientID.c_str());
+        printf("Exception in RawMessageHandler: %s, clientID: %s, isPrimaryIP=%d\n", e.what(), client->clientID.c_str(), isPrimaryIP);
         client->tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
             Napi::Object eventObj = Napi::Object::New(env);
             eventObj.Set("clientID", Napi::String::New(env, client->clientID.c_str()));
             eventObj.Set("type", Napi::String::New(env, "error"));
             eventObj.Set("reason", Napi::String::New(env, string("ASDU handling failed: ") + e.what()));
+            eventObj.Set("isPrimaryIP", Napi::Boolean::New(env, isPrimaryIP)); // Добавляем isPrimaryIP
             std::vector<napi_value> args = {Napi::String::New(env, "data"), eventObj};
             jsCallback.Call(args);
         });

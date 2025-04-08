@@ -38,6 +38,7 @@ private:
     std::string clientID;
     int cnt = 0;
     int asduAddress;
+    
     Napi::ThreadSafeFunction tsfn;
     IMasterConnection masterConnection = nullptr;
 

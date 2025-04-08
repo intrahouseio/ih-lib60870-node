@@ -26,14 +26,18 @@ private:
     
     CS104_Slave server;
     std::thread _thread;
-    std::atomic<bool> running;
+    //std::atomic<bool> running;
     std::mutex connMutex; // Synchronize connection state changes
-    bool started = false;
+    //bool started = false;
     int serverId = 0;
+    std::string ipReserve;
     std::string serverID;
+    std::map<int, CS101_ASDU> asduGroups; // Пока не используется, но добавлено для будущей группировки
     int cnt = 0;
     int asduAddress;     
     Napi::ThreadSafeFunction tsfn;
+    bool running;
+    bool started;
     std::map<IMasterConnection, int> clientConnections; // Map of client connections to client IDs
 
     static bool ConnectionRequestHandler(void *parameter, const char *ipAddress);
@@ -47,3 +51,4 @@ private:
 };
 
 #endif // CS104_SERVER_H
+
