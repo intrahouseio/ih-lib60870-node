@@ -1,12 +1,12 @@
 #ifndef CS104_CLIENT_H
 #define CS104_CLIENT_H
 
-
 #include <mutex>
 #include <thread>
 #include <napi.h>
 #include <atomic>
 #include <vector>
+#include <map> // Добавляем для std::map
 
 extern "C" {
 #include "cs104_connection.h"
@@ -30,11 +30,13 @@ private:
     std::mutex connMutex;
     bool connected = false;
     bool activated = false;
-    //int clientId = 0;
     std::string clientID;
     int cnt = 0;
     int asduAddress; 
     bool usingPrimaryIp;
+
+    std::vector<std::pair<int, std::string>> fileList; // IOA и имя файла
+    std::map<int, std::vector<uint8_t>> fileData; // Хранение фрагментов файла по IOA
 
     Napi::ThreadSafeFunction tsfn;
 
@@ -47,6 +49,10 @@ private:
     Napi::Value SendStopDT(const Napi::CallbackInfo& info);
     Napi::Value SendCommands(const Napi::CallbackInfo& info);
     Napi::Value GetStatus(const Napi::CallbackInfo& info);
+    Napi::Value RequestFileList(const Napi::CallbackInfo& info);
+    Napi::Value ReadFiles(const Napi::CallbackInfo& info);
+
+    std::string getFileNameByIOA(int ioa); // Добавляем объявление
 };
 
 #endif // CS104_CLIENT_H

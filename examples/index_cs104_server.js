@@ -1,4 +1,4 @@
-const { IEC104Server } = require('./build/Release/addon_iec60870');
+const { IEC104Server } = require('../build/Release/addon_iec60870');
 
 // Creating an instance of the server with a callback function to handle events
 const server = new IEC104Server((event, data) => {
