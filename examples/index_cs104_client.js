@@ -7,10 +7,21 @@ const client = new IEC104Client((event, data) => {
     // Выводим все события для отладки
     console.log(`Server Event: ${event}, Data: ${util.inspect(data, { depth: null })}`);
 
+    // После установления соединения будет следующий вывод:
+    // Connection event: opened, reason: connection established, clientID: client1
+    // Server Event: conn, Data: {
+    //   clientID: 'client1',
+    //   type: 'control',
+    //   event: 'opened',
+    //   reason: 'connection established',
+    //   isPrimaryIP: true
+    //}
+
     // После открытия соединения отправляем STARTDT
     if (data.event === 'opened') {
         console.log('Connection opened, sending STARTDT...');
         client.sendStartDT();
+        // Connected successfully to 192.168.0.102:2404, clientID: client1
     }
 
     // После активации соединения отправляем команды, включая запрос списка файлов
@@ -22,11 +33,23 @@ const client = new IEC104Client((event, data) => {
             { typeId: 45, ioa: 145, value: true, asdu: 1, bselCmd: true, ql: 1 }, // C_SC_NA_1: Включить
             { typeId: 46, ioa: 146, value: 1, asdu: 1, bselCmd: 1, ql: 0 }, // C_DC_NA_1: Включить
             { typeId: 47, ioa: 147, value: 1, asdu: 1, bselCmd: 1, ql: 0 }, // C_RC_NA_1: Увеличить
-            { typeId: 48, ioa: 148, value: 0.001, asdu: 1, bselCmd: 1, ql: 0 }, // C_SE_NA_1: Уставка нормализованная (selCmd исправлено на bselCmd)
-            { typeId: 49, ioa: 149, value: 5000, asdu: 1, bselCmd: 1, ql: 0 }, // C_SE_NB_1: Уставка масштабированная
-            { typeId: 50, ioa: 150, value: 123.45, asdu: 1 } // C_SE_NC_1: Уставка с плавающей точкой
+            { typeId: 48, ioa: 148, value: 0.9, asdu: 1, bselCmd: 1, ql: 0 }, // C_SE_NA_1: Уставка нормализованная 
+            { typeId: 49, ioa: 149, value: 5100, asdu: 1, bselCmd: 1, ql: 0 }, // C_SE_NB_1: Уставка масштабированная
+            { typeId: 50, ioa: 150, value: 1.2345, asdu: 1 } // C_SE_NC_1: Уставка с плавающей точкой
         ]);
     }
+
+    // При получении данных будет следующий вывод сообщения
+    // Server Event: data, Data: [
+    //     {
+    //       clientID: 'client1',
+    //       typeId: 13,
+    //       asdu: 1,
+    //       ioa: 13,
+    //       val: 2936033,
+    //       quality: 0
+    //     },
+      
 
     // Обработка списка файлов
     if (data.type === 'fileList') {

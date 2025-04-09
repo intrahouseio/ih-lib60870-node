@@ -1003,6 +1003,7 @@ void IEC104Client::ConnectionHandler(void* parameter, CS104_Connection con, CS10
         eventObj.Set("type", Napi::String::New(env, "control"));
         eventObj.Set("event", Napi::String::New(env, eventStr));
         eventObj.Set("reason", Napi::String::New(env, reason));
+        eventObj.Set("isPrimaryIP", Napi::Boolean::New(env, client->usingPrimaryIp)); 
         std::vector<napi_value> args = {Napi::String::New(env, "conn"), eventObj};
         jsCallback.Call(args);
     });
@@ -1015,7 +1016,7 @@ bool IEC104Client::RawMessageHandler(void* parameter, int address, CS101_ASDU as
     IEC60870_5_TypeID typeID = CS101_ASDU_getTypeID(asdu);
     int numberOfElements = CS101_ASDU_getNumberOfElements(asdu);
     int receivedAsduAddress = CS101_ASDU_getCA(asdu); // Получаем адрес ASDU из полученного сообщения
-    bool isPrimaryIP = client->usingPrimaryIp; // Уже есть в коде
+    bool isPrimaryIP = client->usingPrimaryIp; // Сохраняем для использования, но не выводим в data
 
     try {
         vector<tuple<int, double, uint8_t, uint64_t>> elements;
@@ -1270,7 +1271,7 @@ bool IEC104Client::RawMessageHandler(void* parameter, int address, CS101_ASDU as
 
                 client->fileList = receivedFiles;
 
-                printf("Received file list, count: %zu, clientID: %s, isPrimaryIP=%d\n", receivedFiles.size(), client->clientID.c_str(), isPrimaryIP);
+                printf("Received file list, count: %zu, clientID: %s\n", receivedFiles.size(), client->clientID.c_str());
                 client->tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
                     Napi::Array jsArray = Napi::Array::New(env, receivedFiles.size());
                     for (size_t i = 0; i < receivedFiles.size(); i++) {
@@ -1284,7 +1285,7 @@ bool IEC104Client::RawMessageHandler(void* parameter, int address, CS101_ASDU as
                     eventObj.Set("clientID", Napi::String::New(env, client->clientID.c_str()));
                     eventObj.Set("type", Napi::String::New(env, "fileList"));
                     eventObj.Set("files", jsArray);
-                    eventObj.Set("isPrimaryIP", Napi::Boolean::New(env, isPrimaryIP));
+                    // Убираем isPrimaryIP из fileList
                     std::vector<napi_value> args = {Napi::String::New(env, "data"), eventObj};
                     jsCallback.Call(args);
                 });
@@ -1297,7 +1298,6 @@ bool IEC104Client::RawMessageHandler(void* parameter, int address, CS101_ASDU as
                     FileSegment io = (FileSegment)CS101_ASDU_getElement(asdu, i);
                     if (io) {
                         int ioa = InformationObject_getObjectAddress((InformationObject)io);
-                        // Исправляем доступ к данным сегмента
                         uint8_t* segmentData = CS101_ASDU_getPayload(asdu) + 6; // Смещение: IOA (3) + NOS (1) + LOS (1) + данные
                         uint8_t length = CS101_ASDU_getPayloadSize(asdu) - 6; // Длина данных сегмента
                         bool isLastSegment = true; // Предполагаем, что сервер сам управляет сегментами
@@ -1305,8 +1305,8 @@ bool IEC104Client::RawMessageHandler(void* parameter, int address, CS101_ASDU as
                         auto& fileBuffer = client->fileData[ioa];
                         fileBuffer.insert(fileBuffer.end(), segmentData, segmentData + length);
 
-                        printf("Received file segment for IOA=%d, length=%u, last=%d, clientID: %s, isPrimaryIP=%d\n", 
-                               ioa, length, isLastSegment, client->clientID.c_str(), isPrimaryIP);
+                        printf("Received file segment for IOA=%d, length=%u, last=%d, clientID: %s\n", 
+                               ioa, length, isLastSegment, client->clientID.c_str());
 
                         if (isLastSegment) {
                             client->tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
@@ -1316,7 +1316,7 @@ bool IEC104Client::RawMessageHandler(void* parameter, int address, CS101_ASDU as
                                 fileDataObj.Set("ioa", Napi::Number::New(env, ioa));
                                 fileDataObj.Set("fileName", Napi::String::New(env, client->getFileNameByIOA(ioa)));
                                 fileDataObj.Set("data", Napi::Buffer<uint8_t>::Copy(env, fileBuffer.data(), fileBuffer.size()));
-                                fileDataObj.Set("isPrimaryIP", Napi::Boolean::New(env, isPrimaryIP));
+                                // Убираем isPrimaryIP из fileData
                                 std::vector<napi_value> args = {Napi::String::New(env, "data"), fileDataObj};
                                 jsCallback.Call(args);
                             });
@@ -1335,7 +1335,7 @@ bool IEC104Client::RawMessageHandler(void* parameter, int address, CS101_ASDU as
                     FileACK io = (FileACK)CS101_ASDU_getElement(asdu, i);
                     if (io) {
                         int ioa = InformationObject_getObjectAddress((InformationObject)io);
-                        printf("File transmission started for IOA=%d, clientID: %s, isPrimaryIP=%d\n", ioa, client->clientID.c_str(), isPrimaryIP);
+                        printf("File transmission started for IOA=%d, clientID: %s\n", ioa, client->clientID.c_str());
                         FileACK_destroy(io);
                     }
                 }
@@ -1348,8 +1348,8 @@ bool IEC104Client::RawMessageHandler(void* parameter, int address, CS101_ASDU as
         }
 
         for (const auto& [ioa, val, quality, timestamp] : elements) {
-            printf("ASDU type: %s, clientID: %s, asduAddress: %d, ioa: %i, value: %f, quality: %u, timestamp: %" PRIu64 ", cnt: %i, isPrimaryIP=%d\n",
-                   TypeID_toString(typeID), client->clientID.c_str(), receivedAsduAddress, ioa, val, quality, timestamp, client->cnt, isPrimaryIP);
+            printf("ASDU type: %s, clientID: %s, asduAddress: %d, ioa: %i, value: %f, quality: %u, timestamp: %" PRIu64 ", cnt: %i\n",
+                   TypeID_toString(typeID), client->clientID.c_str(), receivedAsduAddress, ioa, val, quality, timestamp, client->cnt);
         }
 
         client->tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
@@ -1363,7 +1363,6 @@ bool IEC104Client::RawMessageHandler(void* parameter, int address, CS101_ASDU as
                 msg.Set("ioa", Napi::Number::New(env, ioa));
                 msg.Set("val", Napi::Number::New(env, val));
                 msg.Set("quality", Napi::Number::New(env, quality));
-                msg.Set("isPrimaryIP", Napi::Boolean::New(env, isPrimaryIP)); // Добавляем isPrimaryIP
                 if (timestamp > 0) {
                     msg.Set("timestamp", Napi::Number::New(env, static_cast<double>(timestamp)));
                 }
@@ -1376,13 +1375,13 @@ bool IEC104Client::RawMessageHandler(void* parameter, int address, CS101_ASDU as
 
         return true;
     } catch (const std::exception& e) {
-        printf("Exception in RawMessageHandler: %s, clientID: %s, isPrimaryIP=%d\n", e.what(), client->clientID.c_str(), isPrimaryIP);
+        printf("Exception in RawMessageHandler: %s, clientID: %s\n", e.what(), client->clientID.c_str());
         client->tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
             Napi::Object eventObj = Napi::Object::New(env);
             eventObj.Set("clientID", Napi::String::New(env, client->clientID.c_str()));
             eventObj.Set("type", Napi::String::New(env, "error"));
             eventObj.Set("reason", Napi::String::New(env, string("ASDU handling failed: ") + e.what()));
-            eventObj.Set("isPrimaryIP", Napi::Boolean::New(env, isPrimaryIP));
+            eventObj.Set("isPrimaryIP", Napi::Boolean::New(env, isPrimaryIP)); 
             std::vector<napi_value> args = {Napi::String::New(env, "data"), eventObj};
             jsCallback.Call(args);
         });
