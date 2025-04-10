@@ -50,7 +50,10 @@ private:
     Napi::Value SendCommands(const Napi::CallbackInfo& info);
     Napi::Value GetStatus(const Napi::CallbackInfo& info);
     Napi::Value RequestFileList(const Napi::CallbackInfo& info);
-    Napi::Value ReadFiles(const Napi::CallbackInfo& info);
+    Napi::Value SelectFile(const Napi::CallbackInfo& info); // Новый метод для выбора файла
+    Napi::Value OpenFile(const Napi::CallbackInfo& info);     // Новый метод для открытия файла
+    Napi::Value RequestFileSegment(const Napi::CallbackInfo& info); // Новый метод для запроса сегмента
+    Napi::Value ConfirmFileTransfer(const Napi::CallbackInfo& info); 
 
     std::string getFileNameByIOA(int ioa); // Добавляем объявление
 };

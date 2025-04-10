@@ -1,3 +1,4 @@
+
 #ifdef _WIN32
 #include <windows.h>
 #else
@@ -7,15 +8,15 @@
 
 #include <vector>
 #include <tuple>
-#include "cs104_client.h"
-#include <inttypes.h>
+#include <map>
 #include <stdexcept>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-#include <fstream>       
-#include <sstream>     
+#include <fstream>
+#include <sstream>
+#include <inttypes.h> // Добавляем для PRIu64
+#include "cs104_client.h"
 
 using namespace Napi;
 using namespace std;
@@ -30,8 +31,11 @@ Napi::Object IEC104Client::Init(Napi::Env env, Napi::Object exports) {
         InstanceMethod("sendStopDT", &IEC104Client::SendStopDT),
         InstanceMethod("sendCommands", &IEC104Client::SendCommands),
         InstanceMethod("getStatus", &IEC104Client::GetStatus),
-        InstanceMethod("requestFileList", &IEC104Client::RequestFileList), 
-        InstanceMethod("readFiles", &IEC104Client::ReadFiles)
+        InstanceMethod("requestFileList", &IEC104Client::RequestFileList),
+        InstanceMethod("selectFile", &IEC104Client::SelectFile),
+        InstanceMethod("openFile", &IEC104Client::OpenFile),
+        InstanceMethod("requestFileSegment", &IEC104Client::RequestFileSegment),
+        InstanceMethod("confirmFileTransfer", &IEC104Client::ConfirmFileTransfer)
     });
 
     constructor = Napi::Persistent(func);
@@ -52,7 +56,7 @@ IEC104Client::IEC104Client(const Napi::CallbackInfo& info) : Napi::ObjectWrap<IE
     activated = false;
     originatorAddress = 1;
     asduAddress = 0;
-    usingPrimaryIp = true; // Инициализируем как подключение к основному IP
+    usingPrimaryIp = true;
     try {
         tsfn = Napi::ThreadSafeFunction::New(
             info.Env(),
@@ -514,24 +518,22 @@ Napi::Value IEC104Client::SendCommands(const Napi::CallbackInfo& info) {
             }
 
             Napi::Object cmdObj = item.As<Napi::Object>();
-            if (!cmdObj.Has("typeId") || !cmdObj.Has("ioa") || !cmdObj.Has("asdu")|| !cmdObj.Has("value")) {
-                Napi::TypeError::New(env, "Each command must have 'typeId' (number), 'ioa' (number), and 'value'").ThrowAsJavaScriptException();
+            if (!cmdObj.Has("typeId") || !cmdObj.Has("ioa") || !cmdObj.Has("asdu") || !cmdObj.Has("value")) {
+                Napi::TypeError::New(env, "Each command must have 'typeId' (number), 'ioa' (number), 'asdu' (number), and 'value'").ThrowAsJavaScriptException();
                 return env.Undefined();
             }
 
             int typeId = cmdObj.Get("typeId").As<Napi::Number>().Int32Value();
             int ioa = cmdObj.Get("ioa").As<Napi::Number>().Int32Value();
+            int asduAddress = cmdObj.Get("asdu").As<Napi::Number>().Int32Value();
 
-            // Извлечение bselCmd и ql с значениями по умолчанию
             bool bselCmd = cmdObj.Has("bselCmd") && cmdObj.Get("bselCmd").IsBoolean() ? cmdObj.Get("bselCmd").As<Napi::Boolean>() : false;
             int ql = cmdObj.Has("ql") && cmdObj.Get("ql").IsNumber() ? cmdObj.Get("ql").As<Napi::Number>().Int32Value() : 0;
-            int asduAddress = cmdObj.Get("asdu").As<Napi::Number>().Int32Value();
-            if (ql < 0 || ql > 31) {  // Ограничение квалификатора согласно IEC 60870-5-101/104
+            if (ql < 0 || ql > 31) {
                 Napi::RangeError::New(env, "ql must be between 0 and 31").ThrowAsJavaScriptException();
                 return env.Undefined();
             }
 
-            // Используем asduAddress из класса вместо hardcoded 0
             CS101_ASDU asdu = CS101_ASDU_create(CS104_Connection_getAppLayerParameters(connection), false, CS101_COT_ACTIVATION, asduAddress, originatorAddress, false, false);
 
             bool success = false;
@@ -802,6 +804,40 @@ Napi::Value IEC104Client::SendCommands(const Napi::CallbackInfo& info) {
                     break;
                 }
 
+                
+
+              case 122: { // F_SC_NA_1
+    CS101_CauseOfTransmission cot = cmdObj.Has("cot") ? (CS101_CauseOfTransmission)cmdObj.Get("cot").As<Napi::Number>().Int32Value() : CS101_COT_ACTIVATION;
+    int scq = cmdObj.Has("scq") ? cmdObj.Get("scq").As<Napi::Number>().Int32Value() : 0;
+    CS101_ASDU_setTypeID(asdu, F_SC_NA_1);
+    CS101_ASDU_setCOT(asdu, cot);
+
+    if (scq == 1 || scq == 2 || scq == 6) { // Выбор файла (1), открытие (2), запрос секции (6)
+        std::string fileName = cmdObj.Get("value").As<Napi::String>().Utf8Value();
+        uint8_t payload[5] = {(uint8_t)(ioa & 0xff), (uint8_t)((ioa >> 8) & 0xff), (uint8_t)((ioa >> 16) & 0xff), (uint8_t)scq, (uint8_t)fileName.length()};
+        CS101_ASDU_addPayload(asdu, payload, sizeof(payload));
+        CS101_ASDU_addPayload(asdu, (uint8_t*)fileName.c_str(), fileName.length());
+        printf("Sending F_SC_NA_1: IOA=%d, SCQ=%d, File=%s, COT=%d, clientID: %s\n", ioa, scq, fileName.c_str(), cot, clientID.c_str());
+    } else { // Запрос директории (NOF = 4)
+        int nof = cmdObj.Get("value").As<Napi::Number>().Int32Value();
+        uint8_t payload[4] = {(uint8_t)(ioa & 0xff), (uint8_t)((ioa >> 8) & 0xff), (uint8_t)((ioa >> 16) & 0xff), (uint8_t)nof};
+        CS101_ASDU_addPayload(asdu, payload, sizeof(payload));
+        printf("Sending F_SC_NA_1: IOA=%d, NOF=%d, COT=%d, clientID: %s\n", ioa, nof, cot, clientID.c_str());
+    }
+    success = CS104_Connection_sendASDU(connection, asdu);
+    break;
+}
+                case 124: { // F_AF_NA_1
+                    CS101_ASDU_setTypeID(asdu, F_AF_NA_1);
+                    CS101_ASDU_setCOT(asdu, CS101_COT_SPONTANEOUS);
+                    InformationObject io = (InformationObject)FileACK_create(NULL, ioa, 1, 0, 0); // NOS=1
+                    CS101_ASDU_addInformationObject(asdu, io);
+                    InformationObject_destroy(io);
+                    success = CS104_Connection_sendASDU(connection, asdu);
+                    printf("Sending F_AF_NA_1: IOA=%d, clientID: %s\n", ioa, clientID.c_str());
+                    break;
+                }
+
                 default:
                     printf("Unsupported command typeId: %d, clientID: %s\n", typeId, clientID.c_str());
                     CS101_ASDU_destroy(asdu);
@@ -849,13 +885,11 @@ Napi::Value IEC104Client::RequestFileList(const Napi::CallbackInfo& info) {
     try {
         fileList.clear();
 
-        // Создаем ASDU вручную для F_SC_NA_1
+        // Запрос директории с COT=5, ожидаем ответ F_DR (TypeID=126, COT=5)
         CS101_ASDU asdu = CS101_ASDU_create(CS104_Connection_getAppLayerParameters(connection), false, CS101_COT_REQUEST, asduAddress, originatorAddress, false, false);
-        CS101_ASDU_setTypeID(asdu, F_SC_NA_1);
-
-        // Устанавливаем IOA = 0 и FCS = 1 (запрос каталога)
-        uint8_t payload[] = {0x00, 0x00, 0x00,  // IOA = 0 (3 байта)
-                            0x01};             // FCS = 1 (1 байт, запрос каталога)
+        CS101_ASDU_setTypeID(asdu, F_SC_NA_1); // Используем F_SC_NA_1 для запроса
+        uint8_t payload[] = {0x00, 0x00, 0x00,  // IOA = 0
+                            0x04};             // NOF = 4 (запрос директории)
         CS101_ASDU_addPayload(asdu, payload, sizeof(payload));
 
         bool success = CS104_Connection_sendASDU(connection, asdu);
@@ -867,27 +901,58 @@ Napi::Value IEC104Client::RequestFileList(const Napi::CallbackInfo& info) {
             return Napi::Boolean::New(env, false);
         }
 
-        printf("File list request sent successfully, clientID: %s\n", clientID.c_str());
+        printf("File list request sent (F_SC_NA_1, COT=5, NOF=4), expecting F_DR (126, COT=5) response, clientID: %s\n", clientID.c_str());
         return Napi::Boolean::New(env, true);
     } catch (const std::exception& e) {
         printf("Exception in RequestFileList: %s, clientID: %s\n", e.what(), clientID.c_str());
         Napi::Error::New(env, string("RequestFileList failed: ") + e.what()).ThrowAsJavaScriptException();
+        return Napi::Boolean::New(env, false);
+    }
+}
+Napi::Value IEC104Client::SelectFile(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
 
-        tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
-            Napi::Object eventObj = Napi::Object::New(env);
-            eventObj.Set("clientID", Napi::String::New(env, clientID.c_str()));
-            eventObj.Set("type", Napi::String::New(env, "error"));
-            eventObj.Set("reason", Napi::String::New(env, string("RequestFileList failed: ") + e.what()));
-            eventObj.Set("isPrimaryIP", Napi::Boolean::New(env, usingPrimaryIp));
-            std::vector<napi_value> args = {Napi::String::New(env, "data"), eventObj};
-            jsCallback.Call(args);
-        });
+    if (info.Length() < 1 || !info[0].IsString()) {
+        Napi::TypeError::New(env, "Expected file name (string)").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
 
+    std::string fileName = info[0].As<Napi::String>().Utf8Value();
+    std::lock_guard<std::mutex> lock(this->connMutex);
+    if (!connected || !activated) {
+        Napi::Error::New(env, "Not connected or not activated").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+
+    try {
+        // F_SC_NA_1 с COT=13, SCQ=1 (выбор файла)
+        CS101_ASDU asdu = CS101_ASDU_create(CS104_Connection_getAppLayerParameters(connection), false, CS101_COT_ACTIVATION, asduAddress, originatorAddress, false, false);
+        CS101_ASDU_setTypeID(asdu, F_SC_NA_1);
+        uint8_t payload[] = {0x00, 0x00, 0x00,  // IOA = 0
+                            0x01,             // SCQ = 1 (выбор файла)
+                            static_cast<uint8_t>(fileName.length())}; // Длина имени файла
+        CS101_ASDU_addPayload(asdu, payload, sizeof(payload));
+        CS101_ASDU_addPayload(asdu, reinterpret_cast<uint8_t*>(const_cast<char*>(fileName.c_str())), fileName.length());
+
+        bool success = CS104_Connection_sendASDU(connection, asdu);
+        CS101_ASDU_destroy(asdu);
+
+        if (!success) {
+            printf("Failed to select file %s, clientID: %s\n", fileName.c_str(), clientID.c_str());
+            Napi::Error::New(env, "Failed to select file").ThrowAsJavaScriptException();
+            return Napi::Boolean::New(env, false);
+        }
+
+        printf("File selected (F_SC_NA_1, COT=13, SCQ=1, file=%s), clientID: %s\n", fileName.c_str(), clientID.c_str());
+        return Napi::Boolean::New(env, true);
+    } catch (const std::exception& e) {
+        printf("Exception in SelectFile: %s, clientID: %s\n", e.what(), clientID.c_str());
+        Napi::Error::New(env, string("SelectFile failed: ") + e.what()).ThrowAsJavaScriptException();
         return Napi::Boolean::New(env, false);
     }
 }
 
-Napi::Value IEC104Client::ReadFiles(const Napi::CallbackInfo& info) {
+Napi::Value IEC104Client::OpenFile(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
 
     std::lock_guard<std::mutex> lock(this->connMutex);
@@ -896,62 +961,108 @@ Napi::Value IEC104Client::ReadFiles(const Napi::CallbackInfo& info) {
         return env.Undefined();
     }
 
-    int specificIOA = -1;
-    if (info.Length() > 0 && info[0].IsNumber()) {
-        specificIOA = info[0].As<Napi::Number>().Int32Value();
-    }
+    try {
+        // F_SC_NA_1 с COT=13, SCQ=2 (открытие файла)
+        CS101_ASDU asdu = CS101_ASDU_create(CS104_Connection_getAppLayerParameters(connection), false, CS101_COT_ACTIVATION, asduAddress, originatorAddress, false, false);
+        CS101_ASDU_setTypeID(asdu, F_SC_NA_1);
+        uint8_t payload[] = {0x00, 0x00, 0x00,  // IOA = 0
+                            0x02};             // SCQ = 2 (открытие файла)
+        CS101_ASDU_addPayload(asdu, payload, sizeof(payload));
 
-    if (fileList.empty()) {
-        Napi::Error::New(env, "File list is empty. Request file list first.").ThrowAsJavaScriptException();
+        bool success = CS104_Connection_sendASDU(connection, asdu);
+        CS101_ASDU_destroy(asdu);
+
+        if (!success) {
+            printf("Failed to open file, clientID: %s\n", clientID.c_str());
+            Napi::Error::New(env, "Failed to open file").ThrowAsJavaScriptException();
+            return Napi::Boolean::New(env, false);
+        }
+
+        printf("File opened (F_SC_NA_1, COT=13, SCQ=2), clientID: %s\n", clientID.c_str());
+        return Napi::Boolean::New(env, true);
+    } catch (const std::exception& e) {
+        printf("Exception in OpenFile: %s, clientID: %s\n", e.what(), clientID.c_str());
+        Napi::Error::New(env, string("OpenFile failed: ") + e.what()).ThrowAsJavaScriptException();
+        return Napi::Boolean::New(env, false);
+    }
+}
+
+Napi::Value IEC104Client::RequestFileSegment(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+
+    std::lock_guard<std::mutex> lock(this->connMutex);
+    if (!connected || !activated) {
+        Napi::Error::New(env, "Not connected or not activated").ThrowAsJavaScriptException();
         return env.Undefined();
     }
 
     try {
-        bool allSuccess = true;
-        for (const auto& [ioa, fileName] : fileList) {
-            if (specificIOA != -1 && ioa != specificIOA) {
-                continue;
-            }
+        // F_SC_NA_1 с COT=13, SCQ=6 (запрос секции 1)
+        CS101_ASDU asdu = CS101_ASDU_create(CS104_Connection_getAppLayerParameters(connection), false, CS101_COT_ACTIVATION, asduAddress, originatorAddress, false, false);
+        CS101_ASDU_setTypeID(asdu, F_SC_NA_1);
+        uint8_t payload[] = {0x00, 0x00, 0x00,  // IOA = 0
+                            0x06};             // SCQ = 6 (запрос передачи секции)
+        CS101_ASDU_addPayload(asdu, payload, sizeof(payload));
 
-            fileData.erase(ioa);
+        bool success = CS104_Connection_sendASDU(connection, asdu);
+        CS101_ASDU_destroy(asdu);
 
-            CS101_ASDU asdu = CS101_ASDU_create(CS104_Connection_getAppLayerParameters(connection), false, CS101_COT_REQUEST, asduAddress, originatorAddress, false, false);
-            CS101_ASDU_setTypeID(asdu, F_AF_NA_1);
-
-            // Исправляем вызов FileACK_create с правильным количеством аргументов
-            InformationObject io = (InformationObject)FileACK_create(NULL, ioa, 0, 0, 0); // Добавляем недостающий аргумент afq
-            CS101_ASDU_addInformationObject(asdu, io);
-            InformationObject_destroy(io);
-
-            bool success = CS104_Connection_sendASDU(connection, asdu);
-            CS101_ASDU_destroy(asdu);
-
-            if (!success) {
-                allSuccess = false;
-                printf("Failed to request file IOA=%d, name=%s, clientID: %s\n", ioa, fileName.c_str(), clientID.c_str());
-            } else {
-                printf("Requested file IOA=%d, name=%s, clientID: %s\n", ioa, fileName.c_str(), clientID.c_str());
-            }
+        if (!success) {
+            printf("Failed to request file segment, clientID: %s\n", clientID.c_str());
+            Napi::Error::New(env, "Failed to request file segment").ThrowAsJavaScriptException();
+            return Napi::Boolean::New(env, false);
         }
 
-        return Napi::Boolean::New(env, allSuccess);
+        printf("File segment requested (F_SC_NA_1, COT=13, SCQ=6), clientID: %s\n", clientID.c_str());
+        return Napi::Boolean::New(env, true);
     } catch (const std::exception& e) {
-        printf("Exception in ReadFiles: %s, clientID: %s\n", e.what(), clientID.c_str());
-        Napi::Error::New(env, string("ReadFiles failed: ") + e.what()).ThrowAsJavaScriptException();
-
-        tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
-            Napi::Object eventObj = Napi::Object::New(env);
-            eventObj.Set("clientID", Napi::String::New(env, clientID.c_str()));
-            eventObj.Set("type", Napi::String::New(env, "error"));
-            eventObj.Set("reason", Napi::String::New(env, string("ReadFiles failed: ") + e.what()));
-            eventObj.Set("isPrimaryIP", Napi::Boolean::New(env, usingPrimaryIp));
-            std::vector<napi_value> args = {Napi::String::New(env, "data"), eventObj};
-            jsCallback.Call(args);
-        });
-
+        printf("Exception in RequestFileSegment: %s, clientID: %s\n", e.what(), clientID.c_str());
+        Napi::Error::New(env, string("RequestFileSegment failed: ") + e.what()).ThrowAsJavaScriptException();
         return Napi::Boolean::New(env, false);
     }
 }
+
+Napi::Value IEC104Client::ConfirmFileTransfer(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+
+    if (info.Length() < 1 || !info[0].IsNumber()) {
+        Napi::TypeError::New(env, "Expected IOA (number)").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+
+    int ioa = info[0].As<Napi::Number>().Int32Value();
+    std::lock_guard<std::mutex> lock(this->connMutex);
+    if (!connected || !activated) {
+        Napi::Error::New(env, "Not connected or not activated").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+
+    try {
+        // F_AF_NA_1 для подтверждения передачи
+        CS101_ASDU asdu = CS101_ASDU_create(CS104_Connection_getAppLayerParameters(connection), false, CS101_COT_ACTIVATION, asduAddress, originatorAddress, false, false);
+        CS101_ASDU_setTypeID(asdu, F_AF_NA_1);
+        InformationObject io = (InformationObject)FileACK_create(NULL, ioa, 1, 0, 0); // NOS=1, подтверждение
+        CS101_ASDU_addInformationObject(asdu, io);
+        InformationObject_destroy(io);
+
+        bool success = CS104_Connection_sendASDU(connection, asdu);
+        CS101_ASDU_destroy(asdu);
+
+        if (!success) {
+            printf("Failed to confirm file transfer for IOA=%d, clientID: %s\n", ioa, clientID.c_str());
+            Napi::Error::New(env, "Failed to confirm file transfer").ThrowAsJavaScriptException();
+            return Napi::Boolean::New(env, false);
+        }
+
+        printf("File transfer confirmed (F_AF_NA_1, IOA=%d), clientID: %s\n", ioa, clientID.c_str());
+        return Napi::Boolean::New(env, true);
+    } catch (const std::exception& e) {
+        printf("Exception in ConfirmFileTransfer: %s, clientID: %s\n", e.what(), clientID.c_str());
+        Napi::Error::New(env, string("ConfirmFileTransfer failed: ") + e.what()).ThrowAsJavaScriptException();
+        return Napi::Boolean::New(env, false);
+    }
+}
+
 
 void IEC104Client::ConnectionHandler(void* parameter, CS104_Connection con, CS104_ConnectionEvent event) {
     IEC104Client* client = static_cast<IEC104Client*>(parameter);
@@ -1003,7 +1114,7 @@ void IEC104Client::ConnectionHandler(void* parameter, CS104_Connection con, CS10
         eventObj.Set("type", Napi::String::New(env, "control"));
         eventObj.Set("event", Napi::String::New(env, eventStr));
         eventObj.Set("reason", Napi::String::New(env, reason));
-        eventObj.Set("isPrimaryIP", Napi::Boolean::New(env, client->usingPrimaryIp)); 
+        eventObj.Set("isPrimaryIP", Napi::Boolean::New(env, client->usingPrimaryIp));
         std::vector<napi_value> args = {Napi::String::New(env, "conn"), eventObj};
         jsCallback.Call(args);
     });
@@ -1011,17 +1122,192 @@ void IEC104Client::ConnectionHandler(void* parameter, CS104_Connection con, CS10
 
    
 
-bool IEC104Client::RawMessageHandler(void* parameter, int address, CS101_ASDU asdu) {
+
+    
+
+/*case F_DR_TA_1: { // TypeID = 126 (список файлов)
+    if (cot == CS101_COT_REQUEST) { // COT=5 — список файлов
+        std::vector<std::pair<int, std::string>> receivedFiles;
+        uint8_t* rawData = CS101_ASDU_getPayload(asdu);
+        int payloadSize = CS101_ASDU_getPayloadSize(asdu);
+
+        printf("F_DR_TA_1 payload (size=%d): ", payloadSize);
+        for (int j = 0; j < payloadSize; j++) {
+            printf("%02x ", rawData[j]);
+        }
+        printf("\n");
+
+        int offset = 0;
+        while (offset + 7 < payloadSize) { // Минимальный размер элемента
+            // Парсим IOA (3 байта, little-endian)
+            int ioa = rawData[offset] | (rawData[offset + 1] << 8) | (rawData[offset + 2] << 16);
+            offset += 3;
+
+            // NOF (2 байта, little-endian)
+            uint16_t nof = rawData[offset] | (rawData[offset + 1] << 8);
+            offset += 2;
+
+            // LOF (2 байта, little-endian)
+            uint16_t lof = rawData[offset] | (rawData[offset + 1] << 8);
+            offset += 2;
+
+            // Длина имени файла (1 байт)
+            uint8_t nameLength = rawData[offset];
+            offset += 1;
+
+            std::string fileName;
+            if (nameLength > 0 && offset + nameLength <= payloadSize) {
+                fileName = std::string(reinterpret_cast<char*>(rawData + offset), nameLength);
+                offset += nameLength;
+            } else {
+                fileName = "File_" + std::to_string(nof);
+            }
+
+            printf("File entry: IOA=%d, NOF=%u, LOF=%u, Name=%s\n", ioa, nof, lof, fileName.c_str());
+            receivedFiles.emplace_back(ioa, fileName);
+        }
+
+        client->fileList = receivedFiles;
+
+        client->tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
+            Napi::Array fileArray = Napi::Array::New(env, receivedFiles.size());
+            for (size_t i = 0; i < receivedFiles.size(); i++) {
+                Napi::Object fileObj = Napi::Object::New(env);
+                fileObj.Set("ioa", Napi::Number::New(env, receivedFiles[i].first));
+                fileObj.Set("fileName", Napi::String::New(env, receivedFiles[i].second));
+                fileArray[i] = fileObj;
+            }
+
+            Napi::Object eventObj = Napi::Object::New(env);
+            eventObj.Set("clientID", Napi::String::New(env, client->clientID.c_str()));
+            eventObj.Set("type", Napi::String::New(env, "fileList"));
+            eventObj.Set("files", fileArray);
+            std::vector<napi_value> args = {Napi::String::New(env, "data"), eventObj};
+            jsCallback.Call(args);
+        });
+    }
+    return true;
+}
+
+       case F_FR_NA_1: { // TypeID = 120 (готовность файла)
+    for (int i = 0; i < numberOfElements; i++) {
+        FileReady io = (FileReady)CS101_ASDU_getElement(asdu, i);
+        if (io) {
+            int ioa = InformationObject_getObjectAddress((InformationObject)io);
+            uint16_t nof = FileReady_getNOF(io);
+            uint8_t frq = FileReady_getFRQ(io);
+            printf("File ready (F_FR_NA_1, COT=%d) for IOA=%d, NOF=%u, FRQ=%u, clientID: %s\n", 
+                   cot, ioa, nof, frq, client->clientID.c_str());
+            FileReady_destroy(io);
+        }
+    }
+    return true;
+}
+
+            case F_SR_NA_1: { // Секция готова (TypeID = 121)
+                for (int i = 0; i < numberOfElements; i++) {
+                    FileSegment io = (FileSegment)CS101_ASDU_getElement(asdu, i);
+                    if (io) {
+                        int ioa = InformationObject_getObjectAddress((InformationObject)io);
+                        uint16_t nos = FileSegment_getNOF(io); // Используем NOF вместо NOS для совместимости с libiec60870
+                        printf("Section ready (F_SR_NA_1) for IOA=%d, NOS=%u, clientID: %s\n", 
+                               ioa, nos, client->clientID.c_str());
+                        client->tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
+                            Napi::Object eventObj = Napi::Object::New(env);
+                            eventObj.Set("clientID", Napi::String::New(env, client->clientID.c_str()));
+                            eventObj.Set("type", Napi::String::New(env, "sectionReady"));
+                            eventObj.Set("ioa", Napi::Number::New(env, ioa));
+                            eventObj.Set("nos", Napi::Number::New(env, nos));
+                            std::vector<napi_value> args = {Napi::String::New(env, "data"), eventObj};
+                            jsCallback.Call(args);
+                        });
+                        FileSegment_destroy(io);
+                    }
+                }
+                return true;
+            }
+
+            case F_SG_NA_1: { // Передача сегмента файла (TypeID = 125)
+                for (int i = 0; i < numberOfElements; i++) {
+                    FileSegment io = (FileSegment)CS101_ASDU_getElement(asdu, i);
+                    if (io) {
+                        int ioa = InformationObject_getObjectAddress((InformationObject)io);
+                        uint8_t* segment = FileSegment_getSegmentData(io);
+                        uint8_t length = FileSegment_getLengthOfSegment(io);
+                        std::string fileName = client->getFileNameByIOA(ioa);
+                        printf("Received file segment (F_SG_NA_1) for IOA=%d, Length=%u, File=%s, clientID: %s\n", 
+                               ioa, length, fileName.c_str(), client->clientID.c_str());
+                        client->tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
+                            Napi::Object eventObj = Napi::Object::New(env);
+                            eventObj.Set("clientID", Napi::String::New(env, client->clientID.c_str()));
+                            eventObj.Set("type", Napi::String::New(env, "fileData"));
+                            eventObj.Set("ioa", Napi::Number::New(env, ioa));
+                            eventObj.Set("fileName", Napi::String::New(env, fileName));
+                            eventObj.Set("data", Napi::Buffer<uint8_t>::Copy(env, segment, length));
+                            std::vector<napi_value> args = {Napi::String::New(env, "data"), eventObj};
+                            jsCallback.Call(args);
+                        });
+                        FileSegment_destroy(io);
+                    }
+                }
+                return true;
+            }
+
+           case F_LS_NA_1: { // Конец секции (TypeID = 123)
+    for (int i = 0; i < numberOfElements; i++) {
+        InformationObject io = CS101_ASDU_getElement(asdu, i);
+        if (io) {
+            int ioa = InformationObject_getObjectAddress(io);
+            std::string fileName = client->getFileNameByIOA(ioa);
+            uint8_t* payload = CS101_ASDU_getPayload(asdu);
+            int payloadSize = CS101_ASDU_getPayloadSize(asdu);
+            printf("End of section (F_LS_NA_1) for IOA=%d, File=%s, Payload size=%d, clientID: %s\n", 
+                   ioa, fileName.c_str(), payloadSize, client->clientID.c_str());
+            client->tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
+                Napi::Object eventObj = Napi::Object::New(env);
+                eventObj.Set("clientID", Napi::String::New(env, client->clientID.c_str()));
+                eventObj.Set("type", Napi::String::New(env, "fileEnd"));
+                eventObj.Set("ioa", Napi::Number::New(env, ioa));
+                eventObj.Set("fileName", Napi::String::New(env, fileName));
+                std::vector<napi_value> args = {Napi::String::New(env, "data"), eventObj};
+                jsCallback.Call(args);
+            });
+            InformationObject_destroy(io);
+        }
+    }
+    return true;
+}
+
+            case F_AF_NA_1: { // Подтверждение передачи (TypeID = 124)
+                for (int i = 0; i < numberOfElements; i++) {
+                    FileACK io = (FileACK)CS101_ASDU_getElement(asdu, i);
+                    if (io) {
+                        int ioa = InformationObject_getObjectAddress((InformationObject)io);
+                        uint16_t nof = FileACK_getNOF(io);
+                        printf("File transfer acknowledged (F_AF_NA_1) for IOA=%d, NOF=%u, clientID: %s\n", 
+                               ioa, nof, client->clientID.c_str());
+                        FileACK_destroy(io);
+                    }
+                }
+                return true;
+            }*/
+           bool IEC104Client::RawMessageHandler(void* parameter, int address, CS101_ASDU asdu) {
     IEC104Client* client = static_cast<IEC104Client*>(parameter);
     IEC60870_5_TypeID typeID = CS101_ASDU_getTypeID(asdu);
+    CS101_CauseOfTransmission cot = CS101_ASDU_getCOT(asdu);
     int numberOfElements = CS101_ASDU_getNumberOfElements(asdu);
-    int receivedAsduAddress = CS101_ASDU_getCA(asdu); // Получаем адрес ASDU из полученного сообщения
-    bool isPrimaryIP = client->usingPrimaryIp; // Сохраняем для использования, но не выводим в data
+    int receivedAsduAddress = CS101_ASDU_getCA(asdu);
+    bool isPrimaryIP = client->usingPrimaryIp;
+
+    printf("Received ASDU: TypeID=%d, COT=%d, ASDUAddr=%d, Elements=%d, clientID: %s\n", 
+           typeID, cot, receivedAsduAddress, numberOfElements, client->clientID.c_str());
 
     try {
-        vector<tuple<int, double, uint8_t, uint64_t>> elements;
+        // Логика для данных мониторинга (M_ types)
+        std::vector<std::tuple<int, double, uint8_t, uint64_t>> elements;
 
         switch (typeID) {
+            // Обработка данных мониторинга
             case M_SP_NA_1:
                 for (int i = 0; i < numberOfElements; i++) {
                     SinglePointInformation io = (SinglePointInformation)CS101_ASDU_getElement(asdu, i);
@@ -1246,96 +1532,181 @@ bool IEC104Client::RawMessageHandler(void* parameter, int address, CS101_ASDU as
                 }
                 break;
 
-            case F_FR_NA_1: {
-                std::vector<std::pair<int, std::string>> receivedFiles;
+            // Обработка данных передачи файлов (F_ types)
+            case F_DR_TA_1: { // File Directory Response (TypeID = 126)
+                if (cot == CS101_COT_REQUEST) { // COT=5 for directory response
+                    std::vector<std::pair<int, std::string>> receivedFiles;
+                    uint8_t* rawData = CS101_ASDU_getPayload(asdu);
+                    int payloadSize = CS101_ASDU_getPayloadSize(asdu);
+
+                    printf("F_DR_TA_1 payload (size=%d): ", payloadSize);
+                    for (int j = 0; j < payloadSize; j++) {
+                        printf("%02x ", rawData[j]);
+                    }
+                    printf("\n");
+
+                    int offset = 0;
+                    while (offset + 7 < payloadSize) { // Minimum size: IOA(3) + NOF(2) + LOF(2)
+                        int ioa = rawData[offset] | (rawData[offset + 1] << 8) | (rawData[offset + 2] << 16);
+                        offset += 3;
+
+                        uint16_t nof = rawData[offset] | (rawData[offset + 1] << 8);
+                        offset += 2;
+
+                        uint16_t lof = rawData[offset] | (rawData[offset + 1] << 8);
+                        offset += 2;
+
+                        uint8_t nameLength = (offset < payloadSize) ? rawData[offset] : 0;
+                        offset += 1;
+
+                        std::string fileName;
+                        if (nameLength > 0 && offset + nameLength <= payloadSize) {
+                            fileName = std::string(reinterpret_cast<char*>(rawData + offset), nameLength);
+                            offset += nameLength;
+                        } else {
+                            fileName = "File_" + std::to_string(nof);
+                        }
+
+                        printf("File entry: IOA=%d, NOF=%u, LOF=%u, Name=%s\n", ioa, nof, lof, fileName.c_str());
+                        receivedFiles.emplace_back(ioa, fileName);
+                    }
+
+                    client->fileList = receivedFiles;
+
+                    client->tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
+                        Napi::Array fileArray = Napi::Array::New(env, receivedFiles.size());
+                        for (size_t i = 0; i < receivedFiles.size(); i++) {
+                            Napi::Object fileObj = Napi::Object::New(env);
+                            fileObj.Set("ioa", Napi::Number::New(env, receivedFiles[i].first));
+                            fileObj.Set("fileName", Napi::String::New(env, receivedFiles[i].second));
+                            fileArray[i] = fileObj;
+                        }
+
+                        Napi::Object eventObj = Napi::Object::New(env);
+                        eventObj.Set("clientID", Napi::String::New(env, client->clientID.c_str()));
+                        eventObj.Set("type", Napi::String::New(env, "fileList"));
+                        eventObj.Set("asdu", Napi::Number::New(env, receivedAsduAddress));
+                        eventObj.Set("files", fileArray);
+                        std::vector<napi_value> args = {Napi::String::New(env, "data"), eventObj};
+                        jsCallback.Call(args);
+                    });
+                } else {
+                    printf("Unexpected COT=%d for F_DR_TA_1, expected COT=5, clientID: %s\n", cot, client->clientID.c_str());
+                }
+                return true;
+            }
+
+            case F_FR_NA_1: { // File Ready (TypeID = 120)
                 for (int i = 0; i < numberOfElements; i++) {
                     FileReady io = (FileReady)CS101_ASDU_getElement(asdu, i);
                     if (io) {
                         int ioa = InformationObject_getObjectAddress((InformationObject)io);
                         uint16_t nof = FileReady_getNOF(io);
-                        uint8_t* rawData = CS101_ASDU_getPayload(asdu);
-                        int payloadSize = CS101_ASDU_getPayloadSize(asdu);
+                        uint8_t frq = FileReady_getFRQ(io);
+                        std::string fileName = client->getFileNameByIOA(ioa);
+                        printf("File ready (F_FR_NA_1, COT=%d) for IOA=%d, NOF=%u, FRQ=%u, File=%s, clientID: %s\n", 
+                               cot, ioa, nof, frq, fileName.c_str(), client->clientID.c_str());
 
-                        int nameOffset = 7; // IOA (3) + NOF (2) + LOF (2)
-                        int nameLength = nof & 0xFF;
-                        if (nameOffset + nameLength <= payloadSize) {
-                            std::string fileName(reinterpret_cast<char*>(rawData + nameOffset), nameLength);
-                            receivedFiles.emplace_back(ioa, fileName);
-                        } else {
-                            printf("Invalid file name length in F_FR_NA_1, IOA=%d, clientID: %s\n", ioa, client->clientID.c_str());
-                            receivedFiles.emplace_back(ioa, "Unknown_" + std::to_string(ioa));
-                        }
+                        client->tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
+                            Napi::Object eventObj = Napi::Object::New(env);
+                            eventObj.Set("clientID", Napi::String::New(env, client->clientID.c_str()));
+                            eventObj.Set("type", Napi::String::New(env, "fileReady"));
+                            eventObj.Set("ioa", Napi::Number::New(env, ioa));
+                            eventObj.Set("fileName", Napi::String::New(env, fileName));
+                            std::vector<napi_value> args = {Napi::String::New(env, "data"), eventObj};
+                            jsCallback.Call(args);
+                        });
                         FileReady_destroy(io);
                     }
                 }
-
-                client->fileList = receivedFiles;
-
-                printf("Received file list, count: %zu, clientID: %s\n", receivedFiles.size(), client->clientID.c_str());
-                client->tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
-                    Napi::Array jsArray = Napi::Array::New(env, receivedFiles.size());
-                    for (size_t i = 0; i < receivedFiles.size(); i++) {
-                        const auto& [ioa, fileName] = receivedFiles[i];
-                        Napi::Object fileObj = Napi::Object::New(env);
-                        fileObj.Set("ioa", Napi::Number::New(env, ioa));
-                        fileObj.Set("fileName", Napi::String::New(env, fileName));
-                        jsArray[i] = fileObj;
-                    }
-                    Napi::Object eventObj = Napi::Object::New(env);
-                    eventObj.Set("clientID", Napi::String::New(env, client->clientID.c_str()));
-                    eventObj.Set("type", Napi::String::New(env, "fileList"));
-                    eventObj.Set("files", jsArray);
-                    // Убираем isPrimaryIP из fileList
-                    std::vector<napi_value> args = {Napi::String::New(env, "data"), eventObj};
-                    jsCallback.Call(args);
-                });
-
                 return true;
             }
 
-            case F_SG_NA_1: {
+            case F_SR_NA_1: { // Section Ready (TypeID = 121)
                 for (int i = 0; i < numberOfElements; i++) {
                     FileSegment io = (FileSegment)CS101_ASDU_getElement(asdu, i);
                     if (io) {
                         int ioa = InformationObject_getObjectAddress((InformationObject)io);
-                        uint8_t* segmentData = CS101_ASDU_getPayload(asdu) + 6; // Смещение: IOA (3) + NOS (1) + LOS (1) + данные
-                        uint8_t length = CS101_ASDU_getPayloadSize(asdu) - 6; // Длина данных сегмента
-                        bool isLastSegment = true; // Предполагаем, что сервер сам управляет сегментами
+                        uint16_t nos = FileSegment_getNOF(io);
+                        std::string fileName = client->getFileNameByIOA(ioa);
+                        printf("Section ready (F_SR_NA_1) for IOA=%d, NOS=%u, File=%s, clientID: %s\n", 
+                               ioa, nos, fileName.c_str(), client->clientID.c_str());
 
-                        auto& fileBuffer = client->fileData[ioa];
-                        fileBuffer.insert(fileBuffer.end(), segmentData, segmentData + length);
-
-                        printf("Received file segment for IOA=%d, length=%u, last=%d, clientID: %s\n", 
-                               ioa, length, isLastSegment, client->clientID.c_str());
-
-                        if (isLastSegment) {
-                            client->tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
-                                Napi::Object fileDataObj = Napi::Object::New(env);
-                                fileDataObj.Set("clientID", Napi::String::New(env, client->clientID.c_str()));
-                                fileDataObj.Set("type", Napi::String::New(env, "fileData"));
-                                fileDataObj.Set("ioa", Napi::Number::New(env, ioa));
-                                fileDataObj.Set("fileName", Napi::String::New(env, client->getFileNameByIOA(ioa)));
-                                fileDataObj.Set("data", Napi::Buffer<uint8_t>::Copy(env, fileBuffer.data(), fileBuffer.size()));
-                                // Убираем isPrimaryIP из fileData
-                                std::vector<napi_value> args = {Napi::String::New(env, "data"), fileDataObj};
-                                jsCallback.Call(args);
-                            });
-
-                            client->fileData.erase(ioa);
-                        }
-
+                        client->tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
+                            Napi::Object eventObj = Napi::Object::New(env);
+                            eventObj.Set("clientID", Napi::String::New(env, client->clientID.c_str()));
+                            eventObj.Set("type", Napi::String::New(env, "sectionReady"));
+                            eventObj.Set("ioa", Napi::Number::New(env, ioa));
+                            eventObj.Set("nos", Napi::Number::New(env, nos));
+                            eventObj.Set("fileName", Napi::String::New(env, fileName));
+                            std::vector<napi_value> args = {Napi::String::New(env, "data"), eventObj};
+                            jsCallback.Call(args);
+                        });
                         FileSegment_destroy(io);
                     }
                 }
                 return true;
             }
 
-            case F_AF_NA_1: {
+            case F_SG_NA_1: { // File Segment (TypeID = 125)
+                for (int i = 0; i < numberOfElements; i++) {
+                    FileSegment io = (FileSegment)CS101_ASDU_getElement(asdu, i);
+                    if (io) {
+                        int ioa = InformationObject_getObjectAddress((InformationObject)io);
+                        uint8_t* segment = FileSegment_getSegmentData(io);
+                        uint8_t length = FileSegment_getLengthOfSegment(io);
+                        std::string fileName = client->getFileNameByIOA(ioa);
+                        printf("Received file segment (F_SG_NA_1) for IOA=%d, Length=%u, File=%s, clientID: %s\n", 
+                               ioa, length, fileName.c_str(), client->clientID.c_str());
+
+                        client->tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
+                            Napi::Object eventObj = Napi::Object::New(env);
+                            eventObj.Set("clientID", Napi::String::New(env, client->clientID.c_str()));
+                            eventObj.Set("type", Napi::String::New(env, "fileData"));
+                            eventObj.Set("ioa", Napi::Number::New(env, ioa));
+                            eventObj.Set("fileName", Napi::String::New(env, fileName));
+                            eventObj.Set("data", Napi::Buffer<uint8_t>::Copy(env, segment, length));
+                            std::vector<napi_value> args = {Napi::String::New(env, "data"), eventObj};
+                            jsCallback.Call(args);
+                        });
+                        FileSegment_destroy(io);
+                    }
+                }
+                return true;
+            }
+
+            case F_LS_NA_1: { // Last Section (TypeID = 123)
+                for (int i = 0; i < numberOfElements; i++) {
+                    InformationObject io = CS101_ASDU_getElement(asdu, i);
+                    if (io) {
+                        int ioa = InformationObject_getObjectAddress(io);
+                        std::string fileName = client->getFileNameByIOA(ioa);
+                        printf("End of section (F_LS_NA_1) for IOA=%d, File=%s, clientID: %s\n", 
+                               ioa, fileName.c_str(), client->clientID.c_str());
+
+                        client->tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
+                            Napi::Object eventObj = Napi::Object::New(env);
+                            eventObj.Set("clientID", Napi::String::New(env, client->clientID.c_str()));
+                            eventObj.Set("type", Napi::String::New(env, "fileEnd"));
+                            eventObj.Set("ioa", Napi::Number::New(env, ioa));
+                            eventObj.Set("fileName", Napi::String::New(env, fileName));
+                            std::vector<napi_value> args = {Napi::String::New(env, "data"), eventObj};
+                            jsCallback.Call(args);
+                        });
+                        InformationObject_destroy(io);
+                    }
+                }
+                return true;
+            }
+
+            case F_AF_NA_1: { // File Acknowledgment (TypeID = 124)
                 for (int i = 0; i < numberOfElements; i++) {
                     FileACK io = (FileACK)CS101_ASDU_getElement(asdu, i);
                     if (io) {
                         int ioa = InformationObject_getObjectAddress((InformationObject)io);
-                        printf("File transmission started for IOA=%d, clientID: %s\n", ioa, client->clientID.c_str());
+                        uint16_t nof = FileACK_getNOF(io);
+                        printf("File transfer acknowledged (F_AF_NA_1) for IOA=%d, NOF=%u, clientID: %s\n", 
+                               ioa, nof, client->clientID.c_str());
                         FileACK_destroy(io);
                     }
                 }
@@ -1344,44 +1715,55 @@ bool IEC104Client::RawMessageHandler(void* parameter, int address, CS101_ASDU as
 
             default:
                 printf("Received unsupported ASDU type: %s (%i), clientID: %s\n", TypeID_toString(typeID), typeID, client->clientID.c_str());
+                int payloadSize = CS101_ASDU_getPayloadSize(asdu);
+                uint8_t* payload = CS101_ASDU_getPayload(asdu);
+                printf("Raw payload (size=%d): ", payloadSize);
+                for (int i = 0; i < payloadSize; i++) {
+                    printf("%02x ", payload[i]);
+                }
+                printf("\n");
                 return true;
         }
 
-        for (const auto& [ioa, val, quality, timestamp] : elements) {
-            printf("ASDU type: %s, clientID: %s, asduAddress: %d, ioa: %i, value: %f, quality: %u, timestamp: %" PRIu64 ", cnt: %i\n",
-                   TypeID_toString(typeID), client->clientID.c_str(), receivedAsduAddress, ioa, val, quality, timestamp, client->cnt);
+        // Обработка данных мониторинга (M_ types), если есть элементы
+        if (!elements.empty()) {
+            for (const auto& [ioa, val, quality, timestamp] : elements) {
+                printf("ASDU type: %s, clientID: %s, asduAddress: %d, ioa: %i, value: %f, quality: %u, timestamp: %" PRIu64 ", cnt: %i\n", 
+                       TypeID_toString(typeID), client->clientID.c_str(), receivedAsduAddress, ioa, val, quality, timestamp, client->cnt);
+            }
+
+            client->tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
+                Napi::Array jsArray = Napi::Array::New(env, elements.size());
+                for (size_t i = 0; i < elements.size(); i++) {
+                    const auto& [ioa, val, quality, timestamp] = elements[i];
+                    Napi::Object msg = Napi::Object::New(env);
+                    msg.Set("clientID", Napi::String::New(env, client->clientID.c_str()));
+                    msg.Set("typeId", Napi::Number::New(env, typeID));
+                    msg.Set("asdu", Napi::Number::New(env, receivedAsduAddress));
+                    msg.Set("ioa", Napi::Number::New(env, ioa));
+                    msg.Set("val", Napi::Number::New(env, val));
+                    msg.Set("quality", Napi::Number::New(env, quality));
+                    if (timestamp > 0) {
+                        msg.Set("timestamp", Napi::Number::New(env, static_cast<double>(timestamp)));
+                    }
+                    jsArray[i] = msg;
+                }
+                std::vector<napi_value> args = {Napi::String::New(env, "data"), jsArray};
+                jsCallback.Call(args);
+                client->cnt++;
+            });
         }
 
-        client->tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
-            Napi::Array jsArray = Napi::Array::New(env, elements.size());
-            for (size_t i = 0; i < elements.size(); i++) {
-                const auto& [ioa, val, quality, timestamp] = elements[i];
-                Napi::Object msg = Napi::Object::New(env);
-                msg.Set("clientID", Napi::String::New(env, client->clientID.c_str()));
-                msg.Set("typeId", Napi::Number::New(env, typeID));
-                msg.Set("asdu", Napi::Number::New(env, receivedAsduAddress));
-                msg.Set("ioa", Napi::Number::New(env, ioa));
-                msg.Set("val", Napi::Number::New(env, val));
-                msg.Set("quality", Napi::Number::New(env, quality));
-                if (timestamp > 0) {
-                    msg.Set("timestamp", Napi::Number::New(env, static_cast<double>(timestamp)));
-                }
-                jsArray[i] = msg;
-            }
-            std::vector<napi_value> args = {Napi::String::New(env, "data"), jsArray};
-            jsCallback.Call(args);
-            client->cnt++;
-        });
-
         return true;
+
     } catch (const std::exception& e) {
         printf("Exception in RawMessageHandler: %s, clientID: %s\n", e.what(), client->clientID.c_str());
         client->tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
             Napi::Object eventObj = Napi::Object::New(env);
             eventObj.Set("clientID", Napi::String::New(env, client->clientID.c_str()));
             eventObj.Set("type", Napi::String::New(env, "error"));
-            eventObj.Set("reason", Napi::String::New(env, string("ASDU handling failed: ") + e.what()));
-            eventObj.Set("isPrimaryIP", Napi::Boolean::New(env, isPrimaryIP)); 
+            eventObj.Set("reason", Napi::String::New(env, std::string("ASDU handling failed: ") + e.what()));
+            eventObj.Set("isPrimaryIP", Napi::Boolean::New(env, isPrimaryIP));
             std::vector<napi_value> args = {Napi::String::New(env, "data"), eventObj};
             jsCallback.Call(args);
         });

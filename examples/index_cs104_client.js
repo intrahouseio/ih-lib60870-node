@@ -1,113 +1,174 @@
-const { IEC104Client } = require('../build/Release/addon_iec60870'); // Ваш модуль
+const { IEC104Client } = require('../build/Release/addon_iec60870');
 const util = require('util');
-const fs = require('fs'); // Для записи файлов на диск
+const fs = require('fs');
 
-// Создаем клиента с обработчиком событий
+const connectionParams = {
+    ip: "192.168.0.12",
+    port: 2404,
+    clientID: "client1",
+    ipReserve: "192.168.0.12",
+    reconnectDelay: 2,
+    originatorAddress: 1,
+    k: 12,
+    w: 8,
+    t0: 30,
+    t1: 60,
+    t2: 20,
+    t3: 40
+};
+
+let isSelectingFile = false;
+let retryCount = 0;
+const maxRetries = 3;
+let isReceivingDirectory = false;
+let allFiles = [];
+
 const client = new IEC104Client((event, data) => {
-    // Выводим все события для отладки
-    console.log(`Server Event: ${event}, Data: ${util.inspect(data, { depth: null })}`);
+    console.log(`[${new Date().toISOString()}] Server Event: ${event}, Data: ${util.inspect(data, { depth: null })}`);
 
-    // После установления соединения будет следующий вывод:
-    // Connection event: opened, reason: connection established, clientID: client1
-    // Server Event: conn, Data: {
-    //   clientID: 'client1',
-    //   type: 'control',
-    //   event: 'opened',
-    //   reason: 'connection established',
-    //   isPrimaryIP: true
-    //}
+    if (data.type === 'error') {
+        console.error(`Error received: ${data.reason}`);
+        return;
+    }
 
-    // После открытия соединения отправляем STARTDT
+    const sendSelectCommand = (fileName, ioa, attempt) => {
+        console.log(`Preparing to send F_SC_NA_1 for ${fileName} with IOA=${ioa} (attempt ${attempt}/${maxRetries})`);
+        try {
+            const status = client.getStatus();
+            console.log('Current connection status:', status);
+            if (!status.connected || !status.activated) {
+                console.error('Connection is not active or not activated, skipping command...');
+                return false;
+            }
+
+            // Попробуем отправить команду без расширения .hdr
+            const result = client.sendCommands([{ typeId: 122, ioa: ioa, value: fileName, asdu: 1, cot: 13, scq: 1 }]);
+            if (!result) {
+                console.error(`Failed to send F_SC_NA_1 for ${fileName} (result: ${result})`);
+                return false;
+            }
+            console.log(`Successfully sent F_SC_NA_1: IOA=${ioa}, SCQ=1, File=${fileName}, COT=13, clientID: ${connectionParams.clientID}`);
+            return true;
+        } catch (err) {
+            console.error(`Exception while sending F_SC_NA_1 for ${fileName}: ${err.message}`);
+            return false;
+        }
+    };
+
     if (data.event === 'opened') {
         console.log('Connection opened, sending STARTDT...');
         client.sendStartDT();
-        // Connected successfully to 192.168.0.102:2404, clientID: client1
     }
 
-    // После активации соединения отправляем команды, включая запрос списка файлов
     if (data.event === 'activated') {
-        console.log('Connection activated, sending commands...');
-        client.sendCommands([
-            { typeId: 100, ioa: 0, value: 20, asdu: 1 }, // C_IC_NA_1: Общий опрос
-            { typeId: 102, ioa: 0, value: 0, asdu: 1 },   // C_CI_NT_1: Запрос списка файлов
-            { typeId: 45, ioa: 145, value: true, asdu: 1, bselCmd: true, ql: 1 }, // C_SC_NA_1: Включить
-            { typeId: 46, ioa: 146, value: 1, asdu: 1, bselCmd: 1, ql: 0 }, // C_DC_NA_1: Включить
-            { typeId: 47, ioa: 147, value: 1, asdu: 1, bselCmd: 1, ql: 0 }, // C_RC_NA_1: Увеличить
-            { typeId: 48, ioa: 148, value: 0.9, asdu: 1, bselCmd: 1, ql: 0 }, // C_SE_NA_1: Уставка нормализованная 
-            { typeId: 49, ioa: 149, value: 5100, asdu: 1, bselCmd: 1, ql: 0 }, // C_SE_NB_1: Уставка масштабированная
-            { typeId: 50, ioa: 150, value: 1.2345, asdu: 1 } // C_SE_NC_1: Уставка с плавающей точкой
-        ]);
+        console.log('Connection activated, requesting file directory...');
+        allFiles = [];
+        isReceivingDirectory = true;
+        client.sendCommands([{ typeId: 122, ioa: 0, value: 4, asdu: 1, cot: 5, scq: 0 }]);
+        setTimeout(() => {
+            if (isReceivingDirectory) {
+                console.log('Finished receiving file directory, full list:', allFiles);
+                isReceivingDirectory = false;
+                if (allFiles.length > 0) {
+                    // Попробуем выбрать другой файл, например, File_2854 с IOA=6938368
+                    const fileToSelect = allFiles.find(f => f.fileName === 'File_2854') || allFiles[0];
+                    const fileName = fileToSelect.fileName;
+                    const ioa = fileToSelect.ioa;
+                    console.log(`Selecting file: ${fileName} with IOA=${ioa} (attempt ${retryCount + 1}/${maxRetries})`);
+                    isSelectingFile = true;
+                    if (sendSelectCommand(fileName, ioa, retryCount + 1)) {
+                        setTimeout(() => {
+                            if (isSelectingFile) {
+                                console.error(`Timeout waiting for fileReady for ${fileName}`);
+                                isSelectingFile = false;
+                                retryCount++;
+                                if (retryCount < maxRetries) {
+                                    console.log(`Retrying file selection for ${fileName}...`);
+                                    sendSelectCommand(fileName, ioa, retryCount + 1);
+                                } else {
+                                    console.error("Max retries reached, giving up on file selection...");
+                                }
+                            }
+                        }, 30000);
+                    } else {
+                        isSelectingFile = false;
+                        retryCount++;
+                        if (retryCount < maxRetries) {
+                            console.log(`Retrying file selection for ${fileName}...`);
+                            sendSelectCommand(fileName, ioa, retryCount + 1);
+                        }
+                    }
+                } else {
+                    console.warn('No files received in directory list.');
+                }
+            }
+        }, 1500);
     }
 
-    // При получении данных будет следующий вывод сообщения
-    // Server Event: data, Data: [
-    //     {
-    //       clientID: 'client1',
-    //       typeId: 13,
-    //       asdu: 1,
-    //       ioa: 13,
-    //       val: 2936033,
-    //       quality: 0
-    //     },
-      
-
-    // Обработка списка файлов
-    if (data.type === 'fileList') {
-        console.log('Received file list:', data.files);
-        if (data.files && data.files.length > 0) {
-            console.log('Requesting all files...');
-            client.readFiles(); // Запрашиваем все файлы
-            // Альтернативно, можно запросить конкретный файл по IOA:
-            // client.readFiles(data.files[0].ioa);
-        } else {
-            console.log('No files available in the list.');
-        }
+    if (data.type === 'fileList' && isReceivingDirectory) {
+        console.log('Received partial file list:', data.files);
+        allFiles = allFiles.concat(data.files);
     }
 
-    // Обработка данных файла
+    if (data.type === 'fileReady') {
+        console.log(`File ${data.fileName} is ready`);
+        isSelectingFile = false;
+        retryCount = 0;
+        client.sendCommands([{ typeId: 122, ioa: data.ioa, value: data.fileName, asdu: 1, cot: 13, scq: 2 }]);
+    }
+
+    if (data.type === 'sectionReady') {
+        console.log(`Section ready for file ${data.fileName}`);
+        client.sendCommands([{ typeId: 122, ioa: data.ioa, value: data.fileName, asdu: 1, cot: 13, scq: 6 }]);
+    }
+
     if (data.type === 'fileData') {
-        console.log(`Received file: IOA=${data.ioa}, Name=${data.fileName}, Size=${data.data.length} bytes`);
-        try {
-            fs.writeFileSync(`./downloaded_${data.fileName}`, data.data);
-            console.log(`File saved as ./downloaded_${data.fileName}`);
-        } catch (err) {
-            console.error(`Failed to save file ${data.fileName}:`, err);
-        }
+        console.log(`Received file segment: IOA=${data.ioa}, Name=${data.fileName}, Size=${data.data.length} bytes`);
+        fs.appendFileSync(`./downloaded_${data.fileName}`, Buffer.from(data.data));
+        client.sendCommands([{ typeId: 122, ioa: data.ioa, value: data.fileName, asdu: 1, cot: 13, scq: 6 }]);
+    }
+
+    if (data.type === 'fileEnd') {
+        console.log(`File transfer completed: ${data.fileName}`);
+        client.sendCommands([{ typeId: 124, ioa: data.ioa, asdu: 1 }]);
+        console.log(`File saved as ./downloaded_${data.fileName}`);
+    }
+
+    if (data.event === 'closed') {
+        console.log('Connection closed, reason:', data.reason);
+        const status = client.getStatus();
+        console.log('Current status before reconnect:', status);
+        client.disconnect();
+        setTimeout(() => {
+            console.log('Reconnecting...');
+            try {
+                client.connect(connectionParams);
+            } catch (err) {
+                console.error('Reconnection failed:', err);
+            }
+        }, 2000);
     }
 });
 
-// Функция для подключения и ожидания
 async function main() {
     const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-    // Настройки подключения
-    const connectionParams = {
-        ip: "192.168.0.102",
-        port: 2404,
-        clientID: "client1",
-        ipReserve: "192.168.0.102",
-        reconnectDelay: 2,
-        originatorAddress: 1,
-        k: 12,
-        w: 8,
-        t0: 30,
-        t1: 15,
-        t2: 10,
-        t3: 20
-    };
-
     console.log('Connecting to server with params:', connectionParams);
-    client.connect(connectionParams);
+    try {
+        client.connect(connectionParams);
+    } catch (err) {
+        console.error('Initial connection failed:', err);
+    }
 
-    // Даем время на выполнение операций (можно увеличить при необходимости)
-    await sleep(5000);
-
-    // Пример явного запроса списка файлов через 5 секунд (опционально)
-    console.log('Manually requesting file list...');
-    client.sendCommands([{ typeId: 102, ioa: 0, value: 0, asdu: 1 }]);
+    await sleep(120000); // Увеличено до 120 секунд
+    console.log('Disconnecting client...');
+    client.disconnect();
 }
 
-// Запуск программы
+
+
+
 main().catch(err => {
     console.error('Error in main:', err);
+    client.disconnect();
 });
