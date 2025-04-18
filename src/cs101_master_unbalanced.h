@@ -6,6 +6,7 @@
 #include <atomic>
 #include <mutex>
 #include <vector>
+#include <map> // Добавлено для slaveStates и slaveActivated
 
 extern "C" {
 #include "hal_serial.h"
@@ -30,13 +31,15 @@ private:
     std::mutex connMutex;
     bool connected = false;
     bool activated = false;
-    //int clientId = 0;
+   
     std::string clientID;
     int cnt = 0;
     Napi::ThreadSafeFunction tsfn;
     int asduAddress = 1;
      int originatorAddress;
    bool usingPrimaryPort;
+   std::map<int, bool> slaveStates; // Состояние каждого слейва (true = AVAILABLE, false = ERROR/IDLE)
+    std::map<int, bool> slaveActivated; // Активировано ли соединение для слейва
 
     static bool RawMessageHandler(void *parameter, int address, CS101_ASDU asdu);
     static void LinkLayerStateChanged(void *parameter, int address, LinkLayerState state);

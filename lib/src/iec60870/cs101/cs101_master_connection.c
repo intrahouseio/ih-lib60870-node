@@ -68,3 +68,18 @@ IMasterConnection_getPeerAddress(IMasterConnection self, char* addrBuf, int addr
     else
         return 0;
 }
+
+static void receiveMessage(CS101_MasterConnection con)
+{
+    if (Frame_isComplete(frame)) {
+        printf("Received frame from slave %d, size=%d: ", con->linkLayerAddress, Frame_getMsgSize(frame));
+        uint8_t* buffer = Frame_getBuffer(frame);
+        for (int i = 0; i < Frame_getMsgSize(frame); i++) {
+            printf("%02x ", buffer[i]);
+        }
+        printf("\n");
+        if (con->asduReceivedHandler != NULL) {
+            con->asduReceivedHandler(con->asduReceivedHandlerParameter, con->linkLayerAddress, asdu);
+        }
+    }
+}

@@ -1,0 +1,13 @@
+prefix=/usr/local
+exec_prefix=/usr/local/bin
+libdir=/usr/local/lib
+sharedlibdir=/usr/local/lib
+includedir=/usr/local/include
+
+Name: Project
+Description: 
+Version: ..
+
+Requires:
+Libs: -L${libdir} -L${sharedlibdir} -llib60870
+Cflags: -I${includedir}

@@ -12,6 +12,7 @@
 #include <mutex>
 #include <stdexcept>
 #include <vector>
+#include <map> 
 
 extern "C" {
 #include "hal_serial.h"
@@ -25,6 +26,8 @@ extern "C" {
 
 using namespace Napi;
 using namespace std;
+
+
 
 FunctionReference IEC101MasterUnbalanced::constructor;
 
@@ -54,8 +57,12 @@ IEC101MasterUnbalanced::IEC101MasterUnbalanced(const CallbackInfo &info) : Objec
 
     Napi::Function emit = info[0].As<Napi::Function>();
     running = false;
-    originatorAddress = 1; // Инициализация по умолчанию
-    asduAddress = 0;       // Инициализация новой переменной по умолчанию
+    originatorAddress = 1;
+    asduAddress = 0;
+    connected = false; // Добавлено для явной инициализации
+    activated = false; // Добавлено для явной инициализации
+    slaveStates.clear(); // Инициализация словаря состояний
+    slaveActivated.clear(); // Инициализация словаря активации
 
     try {
         tsfn = ThreadSafeFunction::New(
@@ -83,6 +90,8 @@ IEC101MasterUnbalanced::~IEC101MasterUnbalanced() {
             SerialPort_destroy(serialPort);
             connected = false;
             activated = false;
+            slaveStates.clear();
+            slaveActivated.clear();
         }
         if (_thread.joinable()) {
             _thread.join();
@@ -94,7 +103,6 @@ IEC101MasterUnbalanced::~IEC101MasterUnbalanced() {
 Napi::Value IEC101MasterUnbalanced::Connect(const CallbackInfo &info) {
     Napi::Env env = info.Env();
 
-    // Проверяем, что передан один аргумент — объект с параметрами
     if (info.Length() < 1 || !info[0].IsObject()) {
         Napi::TypeError::New(env, "Expected an object with { portName (string), baudRate (number), clientID (string), [params (object)] }").ThrowAsJavaScriptException();
         return env.Undefined();
@@ -102,7 +110,6 @@ Napi::Value IEC101MasterUnbalanced::Connect(const CallbackInfo &info) {
 
     Napi::Object config = info[0].As<Napi::Object>();
 
-    // Извлекаем обязательные параметры из объекта
     if (!config.Has("portName") || !config.Get("portName").IsString() ||
         !config.Has("baudRate") || !config.Get("baudRate").IsNumber() ||
         !config.Has("clientID") || !config.Get("clientID").IsString()) {
@@ -119,7 +126,6 @@ Napi::Value IEC101MasterUnbalanced::Connect(const CallbackInfo &info) {
         return env.Undefined();
     }
 
-    // Проверяем, запущен ли клиент
     {
         std::lock_guard<std::mutex> lock(connMutex);
         if (running) {
@@ -128,15 +134,14 @@ Napi::Value IEC101MasterUnbalanced::Connect(const CallbackInfo &info) {
         }
     }
 
-    // Параметры по умолчанию
-    int linkAddress = 1;
-    int t0 = 30;
-    int t1 = 15;
-    int t2 = 10;
-    int reconnectDelay = 5;
-    int queueSize = 100;
+    int linkAddress = 3;
+    int t0 = 120;
+    int t1 = 60;
+    int t2 = 40;
+    int reconnectDelay = 10;
+    int queueSize = 1000;
+    std::vector<int> slaveAddresses;
 
-    // Извлекаем дополнительные параметры, если передан объект params
     if (config.Has("params") && config.Get("params").IsObject()) {
         Napi::Object params = config.Get("params").As<Napi::Object>();
         if (params.Has("linkAddress")) linkAddress = params.Get("linkAddress").As<Number>().Int32Value();
@@ -147,36 +152,55 @@ Napi::Value IEC101MasterUnbalanced::Connect(const CallbackInfo &info) {
         if (params.Has("t2")) t2 = params.Get("t2").As<Number>().Int32Value();
         if (params.Has("reconnectDelay")) reconnectDelay = params.Get("reconnectDelay").As<Number>().Int32Value();
         if (params.Has("queueSize")) queueSize = params.Get("queueSize").As<Number>().Int32Value();
+        if (params.Has("slaveAddresses") && params.Get("slaveAddresses").IsArray()) {
+            Napi::Array slaveAddrArray = params.Get("slaveAddresses").As<Napi::Array>();
+            for (uint32_t i = 0; i < slaveAddrArray.Length(); i++) {
+                Napi::Value addrVal = slaveAddrArray[i];
+                if (addrVal.IsNumber()) {
+                    int addr = addrVal.As<Number>().Int32Value();
+                    if (addr >= 0 && addr <= 255) {
+                        slaveAddresses.push_back(addr);
+                    } else {
+                        Napi::RangeError::New(env, "Each slaveAddress must be 0-255").ThrowAsJavaScriptException();
+                        return env.Undefined();
+                    }
+                }
+            }
+        }
+    }
 
-        if (linkAddress < 0 || linkAddress > 255) {
-            Napi::Error::New(env, "linkAddress must be 0-255").ThrowAsJavaScriptException();
-            return env.Undefined();
-        }
-        if (originatorAddress < 0 || originatorAddress > 255) {
-            Napi::Error::New(env, "originatorAddress must be 0-255").ThrowAsJavaScriptException();
-            return env.Undefined();
-        }
-        if (asduAddress < 0 || asduAddress > 65535) {
-            Napi::Error::New(env, "asduAddress must be 0-65535").ThrowAsJavaScriptException();
-            return env.Undefined();
-        }
-        if (t0 <= 0 || t1 <= 0 || t2 <= 0) {
-            Napi::Error::New(env, "t0, t1, t2 must be positive").ThrowAsJavaScriptException();
-            return env.Undefined();
-        }
-        if (reconnectDelay < 1) {
-            Napi::Error::New(env, "reconnectDelay must be at least 1 second").ThrowAsJavaScriptException();
-            return env.Undefined();
-        }
-        if (queueSize <= 0) {
-            Napi::Error::New(env, "queueSize must be positive").ThrowAsJavaScriptException();
-            return env.Undefined();
-        }
+    if (slaveAddresses.empty()) {
+        Napi::Error::New(env, "At least one slaveAddress must be provided in params.slaveAddresses").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+
+    if (linkAddress < 0 || linkAddress > 255) {
+        Napi::Error::New(env, "linkAddress must be 0-255").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+    if (originatorAddress < 0 || originatorAddress > 255) {
+        Napi::Error::New(env, "originatorAddress must be 0-255").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+    if (asduAddress < 0 || asduAddress > 65535) {
+        Napi::Error::New(env, "asduAddress must be 0-65535").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+    if (t0 <= 0 || t1 <= 0 || t2 <= 0) {
+        Napi::Error::New(env, "t0, t1, t2 must be positive").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+    if (reconnectDelay < 1) {
+        Napi::Error::New(env, "reconnectDelay must be at least 1 second").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+    if (queueSize <= 0) {
+        Napi::Error::New(env, "queueSize must be positive").ThrowAsJavaScriptException();
+        return env.Undefined();
     }
 
     try {
         printf("Creating serial connection to %s, baudRate: %d, clientID: %s\n", portName.c_str(), baudRate, clientID.c_str());
-        fflush(stdout);
         serialPort = SerialPort_create(portName.c_str(), baudRate, 8, 'E', 1);
         if (!serialPort) {
             throw runtime_error("Failed to create serial port object");
@@ -192,14 +216,13 @@ Napi::Value IEC101MasterUnbalanced::Connect(const CallbackInfo &info) {
         struct sCS101_AppLayerParameters alParams;
         alParams.sizeOfTypeId = 1;
         alParams.sizeOfVSQ = 1;
-        alParams.sizeOfCOT = 2;
+        alParams.sizeOfCOT = 1;
         alParams.originatorAddress = originatorAddress;
-        alParams.sizeOfCA = 2;
-        alParams.sizeOfIOA = 3;
+        alParams.sizeOfCA = 1;
+        alParams.sizeOfIOA = 2;
         alParams.maxSizeOfASDU = 249;
 
         printf("Creating master object with queueSize: %d, clientID: %s\n", queueSize, clientID.c_str());
-        fflush(stdout);
         master = CS101_Master_createEx(serialPort, &llParams, &alParams, IEC60870_LINK_LAYER_UNBALANCED, queueSize);
         if (!master) {
             SerialPort_destroy(serialPort);
@@ -209,53 +232,77 @@ Napi::Value IEC101MasterUnbalanced::Connect(const CallbackInfo &info) {
         CS101_Master_setASDUReceivedHandler(master, RawMessageHandler, this);
         CS101_Master_setLinkLayerStateChanged(master, LinkLayerStateChanged, this);
         CS101_Master_setOwnAddress(master, linkAddress);
-        CS101_Master_useSlaveAddress(master, linkAddress);
+        printf("Registered RawMessageHandler for master, clientID: %s\n", clientID.c_str());
 
-        printf("Connecting with params: linkAddress=%d, originatorAddress=%d, asduAddress=%d, t0=%d, t1=%d, t2=%d, reconnectDelay=%d, queueSize=%d, clientID: %s\n",
-               linkAddress, originatorAddress, asduAddress, t0, t1, t2, reconnectDelay, queueSize, clientID.c_str());
-        fflush(stdout);
+        printf("Connecting with params: linkAddress=%d, originatorAddress=%d, asduAddress=%d, t0=%d, t1=%d, t2=%d, reconnectDelay=%d, queueSize=%d, slaveAddresses=[", 
+               linkAddress, originatorAddress, asduAddress, t0, t1, t2, reconnectDelay, queueSize);
+        for (size_t i = 0; i < slaveAddresses.size(); i++) {
+            printf("%d", slaveAddresses[i]);
+            if (i < slaveAddresses.size() - 1) printf(",");
+        }
+        printf("], clientID: %s\n", clientID.c_str());
 
         running = true;
-        _thread = std::thread([this, portName, baudRate, linkAddress, t0, t1, t2, reconnectDelay, queueSize]() {
+        _thread = std::thread([this, portName, baudRate, linkAddress, t0, t1, t2, reconnectDelay, queueSize, slaveAddresses]() {
             try {
                 int retryCount = 0;
+                const int maxRetries = 5;
                 while (running) {
                     printf("Attempting to connect (attempt %d), clientID: %s\n", retryCount + 1, clientID.c_str());
-                    fflush(stdout);
                     bool connectSuccess = SerialPort_open(serialPort);
                     if (connectSuccess) {
                         printf("Serial port opened successfully, starting master, clientID: %s\n", clientID.c_str());
-                        fflush(stdout);
                         CS101_Master_start(master);
-                        Thread_sleep(1000); // Даём время на установку соединения
+                        Thread_sleep(1000);
+
                         {
                             std::lock_guard<std::mutex> lock(this->connMutex);
                             connected = true;
                             activated = true;
-
-                            // Отправляем начальный запрос опроса
-                            CS101_AppLayerParameters alParams = CS101_Master_getAppLayerParameters(master);
-                            CS101_ASDU asdu = CS101_ASDU_create(alParams, false, CS101_COT_REQUEST, 0, this->asduAddress, false, false);
-                            CS101_ASDU_setTypeID(asdu, C_IC_NA_1);
-                            InformationObject io = (InformationObject)InterrogationCommand_create(NULL, 0, IEC60870_QOI_STATION);
-                            CS101_ASDU_addInformationObject(asdu, io);
-                            CS101_Master_sendASDU(master, asdu);
-                            printf("Initial interrogation sent to slave %d, typeId=100, ioa=0, value=20, clientID: %s\n", linkAddress, clientID.c_str());
-                            fflush(stdout);
-                            InformationObject_destroy(io);
-                            CS101_ASDU_destroy(asdu);
-
-                            tsfn.NonBlockingCall([this, linkAddress](Napi::Env env, Function jsCallback) {
-                                Object eventObj = Object::New(env);
-                                eventObj.Set("clientID", String::New(env, clientID.c_str()));
-                                eventObj.Set("type", String::New(env, "control"));
-                                eventObj.Set("event", String::New(env, "opened"));
-                                eventObj.Set("reason", String::New(env, "link layer manually activated"));
-                                eventObj.Set("slaveAddress", Napi::Number::New(env, linkAddress));
-                                std::vector<napi_value> args = {String::New(env, "data"), eventObj};
-                                jsCallback.Call(args);
-                            });
+                            for (int slaveAddr : slaveAddresses) {
+                                CS101_Master_addSlave(master, slaveAddr);
+                                slaveStates[slaveAddr] = false; // Изначально не AVAILABLE
+                                slaveActivated[slaveAddr] = true; // Активируем слейв
+                                printf("Added slave with address %d, clientID: %s\n", slaveAddr, clientID.c_str());
+                            }
                         }
+
+                        for (int slaveAddr : slaveAddresses) {
+                            CS101_Master_useSlaveAddress(master, slaveAddr);
+                            printf("Sending link layer test function to slave %d, clientID: %s\n", slaveAddr, clientID.c_str());
+                            CS101_Master_sendLinkLayerTestFunction(master);
+                            Thread_sleep(500);
+                        }
+
+                        {
+                            std::lock_guard<std::mutex> lock(this->connMutex);
+                            CS101_AppLayerParameters alParams = CS101_Master_getAppLayerParameters(master);
+                            for (int slaveAddr : slaveAddresses) {
+                                CS101_Master_useSlaveAddress(master, slaveAddr);
+                                printf("Switched to slave address %d for initial interrogation, clientID: %s\n", slaveAddr, clientID.c_str());
+                                CS101_ASDU asdu = CS101_ASDU_create(alParams, false, CS101_COT_INTERROGATED_BY_STATION, originatorAddress, slaveAddr, false, false);
+                                CS101_ASDU_setTypeID(asdu, C_IC_NA_1);
+                                InformationObject io = (InformationObject)InterrogationCommand_create(NULL, 0, IEC60870_QOI_STATION);
+                                CS101_ASDU_addInformationObject(asdu, io);
+                                CS101_Master_sendASDU(master, asdu);
+                                printf("Initial interrogation sent to slave %d, typeId=100, ioa=0, value=20, clientID: %s\n", 
+                                       slaveAddr, clientID.c_str());
+                                InformationObject_destroy(io);
+                                CS101_ASDU_destroy(asdu);
+                                Thread_sleep(1000);
+                            }
+                        }
+
+                        tsfn.NonBlockingCall([this, linkAddress](Napi::Env env, Function jsCallback) {
+                            Object eventObj = Object::New(env);
+                            eventObj.Set("clientID", String::New(env, clientID.c_str()));
+                            eventObj.Set("type", String::New(env, "control"));
+                            eventObj.Set("event", String::New(env, "opened"));
+                            eventObj.Set("reason", String::New(env, "link layer manually activated"));
+                            eventObj.Set("slaveAddress", Napi::Number::New(env, linkAddress));
+                            std::vector<napi_value> args = {String::New(env, "data"), eventObj};
+                            jsCallback.Call(args);
+                        });
 
                         while (running) {
                             CS101_Master_run(master);
@@ -269,17 +316,15 @@ Napi::Value IEC101MasterUnbalanced::Connect(const CallbackInfo &info) {
                         std::lock_guard<std::mutex> lock(this->connMutex);
                         if (running && !connected) {
                             printf("Connection lost, preparing to reconnect, clientID: %s\n", clientID.c_str());
-                            fflush(stdout);
                             CS101_Master_stop(master);
                             CS101_Master_destroy(master);
                             SerialPort_destroy(serialPort);
+                            printf("Old master and serial port destroyed, clientID: %s\n", clientID.c_str());
 
                             printf("Recreating serial port and master, clientID: %s\n", clientID.c_str());
-                            fflush(stdout);
                             serialPort = SerialPort_create(portName.c_str(), baudRate, 8, 'E', 1);
                             if (!serialPort) {
                                 printf("Failed to recreate serial port object, clientID: %s\n", clientID.c_str());
-                                fflush(stdout);
                                 throw runtime_error("Failed to recreate serial port object for reconnect");
                             }
 
@@ -293,37 +338,38 @@ Napi::Value IEC101MasterUnbalanced::Connect(const CallbackInfo &info) {
                             struct sCS101_AppLayerParameters alParams;
                             alParams.sizeOfTypeId = 1;
                             alParams.sizeOfVSQ = 1;
-                            alParams.sizeOfCOT = 2;
+                            alParams.sizeOfCOT = 1;
                             alParams.originatorAddress = this->originatorAddress;
-                            alParams.sizeOfCA = 2;
-                            alParams.sizeOfIOA = 3;
+                            alParams.sizeOfCA = 1;
+                            alParams.sizeOfIOA = 2;
                             alParams.maxSizeOfASDU = 249;
 
                             master = CS101_Master_createEx(serialPort, &llParams, &alParams, IEC60870_LINK_LAYER_UNBALANCED, queueSize);
                             if (!master) {
                                 SerialPort_destroy(serialPort);
                                 printf("Failed to recreate master object, clientID: %s\n", clientID.c_str());
-                                fflush(stdout);
                                 throw runtime_error("Failed to recreate master object for reconnect");
                             }
 
                             CS101_Master_setASDUReceivedHandler(master, RawMessageHandler, this);
                             CS101_Master_setLinkLayerStateChanged(master, LinkLayerStateChanged, this);
                             CS101_Master_setOwnAddress(master, linkAddress);
-                            CS101_Master_useSlaveAddress(master, linkAddress);
+                            printf("Registered RawMessageHandler for recreated master, clientID: %s\n", clientID.c_str());
+                            slaveStates.clear();
+                            slaveActivated.clear();
                         } else if (!running && connected) {
                             printf("Thread stopped by client, closing connection, clientID: %s\n", clientID.c_str());
-                            fflush(stdout);
                             CS101_Master_stop(master);
                             CS101_Master_destroy(master);
                             SerialPort_destroy(serialPort);
                             connected = false;
                             activated = false;
+                            slaveStates.clear();
+                            slaveActivated.clear();
                             return;
                         }
                     } else {
                         printf("Serial port failed to open, clientID: %s\n", clientID.c_str());
-                        fflush(stdout);
                         tsfn.NonBlockingCall([=](Napi::Env env, Function jsCallback) {
                             Object eventObj = Object::New(env);
                             eventObj.Set("clientID", String::New(env, clientID.c_str()));
@@ -337,14 +383,26 @@ Napi::Value IEC101MasterUnbalanced::Connect(const CallbackInfo &info) {
 
                     if (running && !connected) {
                         retryCount++;
+                        if (retryCount >= maxRetries) {
+                            printf("Max reconnection attempts (%d) reached, stopping, clientID: %s\n", maxRetries, clientID.c_str());
+                            running = false;
+                            tsfn.NonBlockingCall([=](Napi::Env env, Function jsCallback) {
+                                Object eventObj = Object::New(env);
+                                eventObj.Set("clientID", String::New(env, clientID.c_str()));
+                                eventObj.Set("type", String::New(env, "control"));
+                                eventObj.Set("event", String::New(env, "error"));
+                                eventObj.Set("reason", String::New(env, "Max reconnection attempts reached"));
+                                std::vector<napi_value> args = {String::New(env, "data"), eventObj};
+                                jsCallback.Call(args);
+                            });
+                            break;
+                        }
                         printf("Reconnection attempt %d failed, retrying in %d seconds, clientID: %s\n", retryCount, reconnectDelay, clientID.c_str());
-                        fflush(stdout);
                         Thread_sleep(reconnectDelay * 1000);
                     }
                 }
             } catch (const std::exception& e) {
                 printf("Exception in connection thread: %s, clientID: %s\n", e.what(), clientID.c_str());
-                fflush(stdout);
                 std::lock_guard<std::mutex> lock(this->connMutex);
                 running = false;
                 if (connected) {
@@ -353,6 +411,8 @@ Napi::Value IEC101MasterUnbalanced::Connect(const CallbackInfo &info) {
                     SerialPort_destroy(serialPort);
                     connected = false;
                     activated = false;
+                    slaveStates.clear();
+                    slaveActivated.clear();
                 }
                 tsfn.NonBlockingCall([=](Napi::Env env, Function jsCallback) {
                     Object eventObj = Object::New(env);
@@ -369,7 +429,6 @@ Napi::Value IEC101MasterUnbalanced::Connect(const CallbackInfo &info) {
         return env.Undefined();
     } catch (const std::exception& e) {
         printf("Exception in Connect: %s, clientID: %s\n", e.what(), clientID.c_str());
-        fflush(stdout);
         Napi::Error::New(env, string("Connect failed: ") + e.what()).ThrowAsJavaScriptException();
         return env.Undefined();
     }
@@ -388,6 +447,8 @@ Napi::Value IEC101MasterUnbalanced::Disconnect(const CallbackInfo &info) {
                 SerialPort_destroy(serialPort);
                 connected = false;
                 activated = false;
+                slaveStates.clear();
+                slaveActivated.clear();
             }
         }
     }
@@ -430,33 +491,39 @@ Napi::Value IEC101MasterUnbalanced::SendStopDT(const CallbackInfo &info) {
 Napi::Value IEC101MasterUnbalanced::SendCommands(const CallbackInfo &info) {
     Napi::Env env = info.Env();
 
-    if (info.Length() < 1 || !info[0].IsArray()) {
-        Napi::TypeError::New(env, "Expected commands (array of objects with 'typeId', 'ioa', 'value', and optional fields)").ThrowAsJavaScriptException();
+    if (info.Length() < 2 || !info[0].IsArray() || !info[1].IsNumber()) {
+        Napi::TypeError::New(env, "Expected commands (array of objects) and slaveAddress (number)").ThrowAsJavaScriptException();
         return env.Undefined();
     }
 
     Napi::Array commands = info[0].As<Napi::Array>();
+    int slaveAddress = info[1].As<Napi::Number>().Int32Value();
 
     std::lock_guard<std::mutex> lock(connMutex);
-    if (!connected || !activated) {
-        Napi::Error::New(env, "Not connected or not activated").ThrowAsJavaScriptException();
+    if (!connected || !slaveActivated[slaveAddress]) {
+        printf("SendCommands failed for slave %d: master not connected or slave not activated, clientID: %s\n", 
+               slaveAddress, clientID.c_str());
+        Napi::Error::New(env, "Not connected or slave not activated").ThrowAsJavaScriptException();
         return env.Undefined();
     }
+
+    CS101_Master_useSlaveAddress(master, slaveAddress);
+    printf("Switched to slave address %d, clientID: %s\n", slaveAddress, clientID.c_str());
 
     CS101_AppLayerParameters alParams = CS101_Master_getAppLayerParameters(master);
 
     try {
         bool allSuccess = true;
         for (uint32_t i = 0; i < commands.Length(); i++) {
-            Napi::Value item = commands[i];
-            if (!item.IsObject()) {
-                Napi::TypeError::New(env, "Each command must be an object").ThrowAsJavaScriptException();
+            Napi::Value cmdVal = commands[i];
+            if (!cmdVal.IsObject()) {
+                Napi::TypeError::New(env, "Command must be an object").ThrowAsJavaScriptException();
                 return env.Undefined();
             }
 
-            Napi::Object cmdObj = item.As<Napi::Object>();
+            Napi::Object cmdObj = cmdVal.As<Napi::Object>();
             if (!cmdObj.Has("typeId") || !cmdObj.Has("ioa") || !cmdObj.Has("value")) {
-                Napi::TypeError::New(env, "Each command must have 'typeId' (number), 'ioa' (number), and 'value'").ThrowAsJavaScriptException();
+                Napi::TypeError::New(env, "Each command must have 'typeId', 'ioa', and 'value'").ThrowAsJavaScriptException();
                 return env.Undefined();
             }
 
@@ -464,8 +531,10 @@ Napi::Value IEC101MasterUnbalanced::SendCommands(const CallbackInfo &info) {
             int ioa = cmdObj.Get("ioa").As<Napi::Number>().Int32Value();
             Napi::Value value = cmdObj.Get("value");
 
-            printf("Sending command: typeId=%d, ioa=%d, value=%f, clientID: %s\n", typeId, ioa, value.ToNumber().DoubleValue(), clientID.c_str());
-            CS101_ASDU asdu = CS101_ASDU_create(alParams, false, CS101_COT_ACTIVATION, 0, this->asduAddress, false, false); // Используем asduAddress
+            printf("Sending command: typeId=%d, ioa=%d, value=%f, slaveAddress=%d, clientID: %s\n", 
+                   typeId, ioa, value.ToNumber().DoubleValue(), slaveAddress, clientID.c_str());
+
+            CS101_ASDU asdu = CS101_ASDU_create(alParams, false, CS101_COT_ACTIVATION, 0, slaveAddress, false, false);
 
             switch (typeId) {
                 case C_SC_NA_1: {
@@ -677,7 +746,7 @@ Napi::Value IEC101MasterUnbalanced::SendCommands(const CallbackInfo &info) {
                 }
                 case C_IC_NA_1: {
                     CS101_ASDU_setTypeID(asdu, C_IC_NA_1);
-                    CS101_ASDU_setCOT(asdu, CS101_COT_REQUEST);
+                    CS101_ASDU_setCOT(asdu, CS101_COT_INTERROGATED_BY_STATION);
                     InformationObject io = (InformationObject)InterrogationCommand_create(NULL, ioa, value.As<Napi::Number>().Uint32Value());
                     CS101_ASDU_addInformationObject(asdu, io);
                     CS101_Master_sendASDU(master, asdu);
@@ -724,7 +793,9 @@ Napi::Value IEC101MasterUnbalanced::SendCommands(const CallbackInfo &info) {
             }
 
             CS101_ASDU_destroy(asdu);
-            printf("Sent command: typeId=%d, ioa=%d, clientID: %s\n", typeId, ioa, clientID.c_str());
+            printf("Sent command: typeId=%d, ioa=%d, slaveAddress=%d, clientID: %s\n", 
+                   typeId, ioa, slaveAddress, clientID.c_str());
+            Thread_sleep(100);
         }
         return Boolean::New(env, allSuccess);
     } catch (const std::exception& e) {
@@ -766,39 +837,11 @@ Napi::Value IEC101MasterUnbalanced::AddSlave(const CallbackInfo &info) {
     }
 
     CS101_Master_addSlave(master, slaveAddress);
+    slaveStates[slaveAddress] = false; // Изначально не AVAILABLE
+    slaveActivated[slaveAddress] = true; // Активируем слейв
     printf("Added slave with address %d, clientID: %s\n", slaveAddress, clientID.c_str());
 
     return env.Undefined();
-}
-
-Napi::Value IEC101MasterUnbalanced::PollSlave(const CallbackInfo &info) {
-    Napi::Env env = info.Env();
-
-    if (info.Length() < 1 || !info[0].IsNumber()) {
-        Napi::TypeError::New(env, "Expected slaveAddress (number)").ThrowAsJavaScriptException();
-        return env.Undefined();
-    }
-
-    int slaveAddress = info[0].As<Number>().Int32Value();
-
-    if (slaveAddress < 0 || slaveAddress > 255) {
-        Napi::RangeError::New(env, "slaveAddress must be 0-255").ThrowAsJavaScriptException();
-        return env.Undefined();
-    }
-
-    std::lock_guard<std::mutex> lock(connMutex);
-    if (!connected || !activated) {
-        Napi::Error::New(env, "Not connected or not activated").ThrowAsJavaScriptException();
-        return env.Undefined();
-    }
-
-    LinkLayerState state = LL_STATE_IDLE; // Замените на актуальный getter, если доступен
-    printf("Polling slave with address %d, clientID: %s, link state: %d (0=IDLE, 1=ERROR, 2=BUSY, 3=AVAILABLE)\n", 
-           slaveAddress, clientID.c_str(), state);
-    CS101_Master_pollSingleSlave(master, slaveAddress);
-    printf("Poll completed for slave %d, clientID: %s\n", slaveAddress, clientID.c_str());
-
-    return Boolean::New(env, true);
 }
 
 void IEC101MasterUnbalanced::LinkLayerStateChanged(void *parameter, int address, LinkLayerState state) {
@@ -806,7 +849,8 @@ void IEC101MasterUnbalanced::LinkLayerStateChanged(void *parameter, int address,
     std::string eventStr;
     std::string reason;
 
-    printf("LinkLayerStateChanged called, address: %d, state: %d, clientID: %s\n", address, state, client->clientID.c_str());
+    printf("LinkLayerStateChanged called, address: %d, state: %d (0=IDLE, 1=ERROR, 2=BUSY, 3=AVAILABLE), clientID: %s\n", 
+           address, state, client->clientID.c_str());
 
     {
         std::lock_guard<std::mutex> lock(client->connMutex);
@@ -814,30 +858,42 @@ void IEC101MasterUnbalanced::LinkLayerStateChanged(void *parameter, int address,
             case LL_STATE_ERROR:
                 eventStr = "failed";
                 reason = "link layer error";
-                client->connected = false;
-                client->activated = false;
+                client->slaveStates[address] = false;
+                client->slaveActivated[address] = false;
                 break;
             case LL_STATE_AVAILABLE:
                 eventStr = "opened";
                 reason = "link layer available";
-                client->connected = true;
-                client->activated = true;
+                client->slaveStates[address] = true;
+                client->slaveActivated[address] = true;
                 break;
             case LL_STATE_BUSY:
                 eventStr = "busy";
                 reason = "link layer busy";
-                client->connected = true;
+                client->slaveStates[address] = true;
                 break;
             case LL_STATE_IDLE:
                 eventStr = "closed";
                 reason = client->running ? "link layer closed unexpectedly" : "link layer closed by client";
-                client->connected = false;
-                client->activated = false;
+                client->slaveStates[address] = false;
+                client->slaveActivated[address] = false;
                 break;
         }
+
+        // Проверяем, есть ли хотя бы один активный слейв
+        bool anySlaveActive = false;
+        for (const auto& [addr, active] : client->slaveActivated) {
+            if (active) {
+                anySlaveActive = true;
+                break;
+            }
+        }
+        client->connected = client->running && anySlaveActive;
+        client->activated = client->connected;
     }
 
-    printf("Link layer event: %s, reason: %s, clientID: %s, slaveAddress: %d\n", eventStr.c_str(), reason.c_str(), client->clientID.c_str(), address);
+    printf("Link layer event: %s, reason: %s, clientID: %s, slaveAddress: %d\n", 
+           eventStr.c_str(), reason.c_str(), client->clientID.c_str(), address);
 
     client->tsfn.NonBlockingCall([=](Napi::Env env, Function jsCallback) {
         Object eventObj = Object::New(env);
@@ -855,12 +911,24 @@ bool IEC101MasterUnbalanced::RawMessageHandler(void *parameter, int address, CS1
     IEC101MasterUnbalanced *client = static_cast<IEC101MasterUnbalanced *>(parameter);
     IEC60870_5_TypeID typeID = CS101_ASDU_getTypeID(asdu);
     int numberOfElements = CS101_ASDU_getNumberOfElements(asdu);
-    int receivedAsduAddress = CS101_ASDU_getCA(asdu); // Получаем адрес ASDU из полученного сообщения
+    int receivedAsduAddress = CS101_ASDU_getCA(asdu);
 
-    printf("RawMessageHandler called, address: %d, typeID: %d, elements: %d, clientID: %s\n", address, typeID, numberOfElements, client->clientID.c_str());
+    uint64_t startTime = Hal_getTimeInMs();
+    printf("RawMessageHandler started at %" PRIu64 " ms, linkAddress: %d, asduAddress: %d, typeID: %d, elements: %d, clientID: %s\n", 
+           startTime, address, receivedAsduAddress, typeID, numberOfElements, client->clientID.c_str());
+
+    uint8_t* payload = CS101_ASDU_getPayload(asdu);
+    int payloadSize = CS101_ASDU_getPayloadSize(asdu);
+    printf("ASDU payload (size=%d): ", payloadSize);
+    for (int i = 0; i < payloadSize; i++) {
+        printf("%02x ", payload[i]);
+    }
+    printf("\n");
 
     try {
         vector<tuple<int, double, uint8_t, uint64_t>> elements;
+        printf("RawMessageHandler invoked for address: %d, typeID: %d, payloadSize: %d, clientID: %s\n", 
+               address, typeID, payloadSize, client->clientID.c_str());
 
         switch (typeID) {
             case M_SP_NA_1:
@@ -1046,6 +1114,7 @@ bool IEC101MasterUnbalanced::RawMessageHandler(void *parameter, int address, CS1
                 }
                 break;
             case M_ME_TF_1:
+                printf("Processing M_ME_TF_1, numberOfElements: %d, clientID: %s\n", numberOfElements, client->clientID.c_str());
                 for (int i = 0; i < numberOfElements; i++) {
                     MeasuredValueShortWithCP56Time2a io = (MeasuredValueShortWithCP56Time2a)CS101_ASDU_getElement(asdu, i);
                     if (io) {
@@ -1053,8 +1122,12 @@ bool IEC101MasterUnbalanced::RawMessageHandler(void *parameter, int address, CS1
                         double val = MeasuredValueShort_getValue((MeasuredValueShort)io);
                         uint8_t quality = MeasuredValueShort_getQuality((MeasuredValueShort)io);
                         uint64_t timestamp = CP56Time2a_toMsTimestamp(MeasuredValueShortWithCP56Time2a_getTimestamp(io));
+                        printf("M_ME_TF_1 element %d: ioa=%d, val=%f, quality=%u, timestamp=%" PRIu64 ", clientID: %s\n",
+                               i, ioa, val, quality, timestamp, client->clientID.c_str());
                         elements.emplace_back(ioa, val, quality, timestamp);
                         MeasuredValueShortWithCP56Time2a_destroy(io);
+                    } else {
+                        printf("Failed to get M_ME_TF_1 element %d, clientID: %s\n", i, client->clientID.c_str());
                     }
                 }
                 break;
@@ -1072,7 +1145,13 @@ bool IEC101MasterUnbalanced::RawMessageHandler(void *parameter, int address, CS1
                 }
                 break;
             default:
-                printf("Received unsupported ASDU type: %s (%i), clientID: %s\n", TypeID_toString(typeID), typeID, client->clientID.c_str());
+                printf("Received unsupported ASDU type: %s (%i), clientID: %s, payloadSize=%d\n", 
+                       TypeID_toString(typeID), typeID, client->clientID.c_str(), CS101_ASDU_getPayloadSize(asdu));
+                uint8_t* payload = CS101_ASDU_getPayload(asdu);
+                for (int i = 0; i < CS101_ASDU_getPayloadSize(asdu); i++) {
+                    printf("%02x ", payload[i]);
+                }
+                printf("\n");
                 return true;
         }
 
@@ -1088,7 +1167,7 @@ bool IEC101MasterUnbalanced::RawMessageHandler(void *parameter, int address, CS1
                 Napi::Object msg = Napi::Object::New(env);
                 msg.Set("clientID", String::New(env, client->clientID.c_str()));
                 msg.Set("typeId", Number::New(env, typeID));
-                msg.Set("asdu", Number::New(env, receivedAsduAddress)); // Добавляем полученный asduAddress
+                msg.Set("asdu", Number::New(env, receivedAsduAddress));
                 msg.Set("ioa", Number::New(env, ioa));
                 msg.Set("val", Number::New(env, val));
                 msg.Set("quality", Number::New(env, quality));
@@ -1103,6 +1182,8 @@ bool IEC101MasterUnbalanced::RawMessageHandler(void *parameter, int address, CS1
             client->cnt++;
         });
 
+        printf("RawMessageHandler completed in %" PRIu64 " ms, clientID: %s\n", 
+               Hal_getTimeInMs() - startTime, client->clientID.c_str());
         return true;
     } catch (const std::exception& e) {
         printf("Exception in RawMessageHandler: %s, clientID: %s\n", e.what(), client->clientID.c_str());
@@ -1116,4 +1197,40 @@ bool IEC101MasterUnbalanced::RawMessageHandler(void *parameter, int address, CS1
         });
         return false;
     }
+}
+
+Napi::Value IEC101MasterUnbalanced::PollSlave(const CallbackInfo &info) {
+    Napi::Env env = info.Env();
+
+    if (info.Length() < 1 || !info[0].IsNumber()) {
+        Napi::TypeError::New(env, "Expected slaveAddress (number)").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+
+    int slaveAddress = info[0].As<Number>().Int32Value();
+
+    if (slaveAddress < 0 || slaveAddress > 255) {
+        Napi::RangeError::New(env, "slaveAddress must be 0-255").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+
+    std::lock_guard<std::mutex> lock(connMutex);
+    if (!connected || !slaveActivated[slaveAddress]) {
+        printf("PollSlave failed for slave %d: master not connected or slave not activated, clientID: %s\n", 
+               slaveAddress, clientID.c_str());
+        Napi::Error::New(env, "Not connected or slave not activated").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+
+    CS101_Master_useSlaveAddress(master, slaveAddress);
+    printf("Switched to slave address %d for polling, clientID: %s\n", slaveAddress, clientID.c_str());
+
+    LinkLayerState state = LL_STATE_IDLE; // Замените на актуальный getter, если доступен
+    printf("Polling slave with address %d, clientID: %s, link state: %d (0=IDLE, 1=ERROR, 2=BUSY, 3=AVAILABLE)\n", 
+           slaveAddress, clientID.c_str(), state);
+    CS101_Master_pollSingleSlave(master, slaveAddress);
+    printf("Poll completed for slave %d, clientID: %s\n", slaveAddress, clientID.c_str());
+    Thread_sleep(1000);
+
+    return Boolean::New(env, true);
 }

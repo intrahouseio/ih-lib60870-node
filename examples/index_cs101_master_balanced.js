@@ -56,16 +56,16 @@ async function main() {
             clientId: 1,
             clientID: "cs101_master_1'",
             params: {
-                linkAddress: 1,
-                originatorAddress: 1,
-                asduAddress: 1,
+                linkAddress: 3,
+                originatorAddress: 3,
+                asduAddress: 3,
                 k: 12,
                 w: 8,
-                t0: 30,
-                t1: 15,
-                t2: 10,
-                t3: 20,
-                reconnectDelay: 5,
+                t0: 60, // Увеличено до 60 секунд
+                t1: 30, // Увеличено до 30 секунд
+                t2: 20, // Увеличено до 20 секунд
+                t3: 40,
+                reconnectDelay: 10,
                 maxRetries: 3,
                 queueSize: 100
             }

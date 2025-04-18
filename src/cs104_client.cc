@@ -193,7 +193,7 @@ Napi::Value IEC104Client::Connect(const Napi::CallbackInfo& info) {
                     if (connectSuccess) {
                         printf("Connected successfully to %s:%d, clientID: %s\n", currentIp.c_str(), port, clientID.c_str());
                         fflush(stdout);
-                        CS104_Connection_sendStartDT(connection);
+                        //CS104_Connection_sendStartDT(connection);
                         retryCount = 0;
 
                         while (running) {
@@ -262,7 +262,7 @@ Napi::Value IEC104Client::Connect(const Napi::CallbackInfo& info) {
                                     if (connectSuccess) {
                                         printf("Successfully reconnected to primary IP %s:%d, clientID: %s\n", ip.c_str(), port, clientID.c_str());
                                         fflush(stdout);
-                                        CS104_Connection_sendStartDT(connection);
+                                        //CS104_Connection_sendStartDT(connection);
                                     } else {
                                         printf("Failed to reconnect to primary IP %s:%d, reverting to reserve IP, clientID: %s\n", ip.c_str(), port, clientID.c_str());
                                         fflush(stdout);
@@ -297,7 +297,7 @@ Napi::Value IEC104Client::Connect(const Napi::CallbackInfo& info) {
                                         if (connectSuccess) {
                                             printf("Reconnected to reserve IP %s:%d, clientID: %s\n", ipReserve.c_str(), port, clientID.c_str());
                                             fflush(stdout);
-                                            CS104_Connection_sendStartDT(connection);
+                                            //CS104_Connection_sendStartDT(connection);
                                             connected = true;
                                         } else {
                                             printf("Failed to reconnect to reserve IP %s:%d, clientID: %s\n", ipReserve.c_str(), port, clientID.c_str());
@@ -534,7 +534,7 @@ Napi::Value IEC104Client::SendCommands(const Napi::CallbackInfo& info) {
                 return env.Undefined();
             }
 
-            CS101_ASDU asdu = CS101_ASDU_create(CS104_Connection_getAppLayerParameters(connection), false, CS101_COT_ACTIVATION, asduAddress, originatorAddress, false, false);
+            CS101_ASDU asdu = CS101_ASDU_create(CS104_Connection_getAppLayerParameters(connection), false, CS101_COT_ACTIVATION, originatorAddress, asduAddress, false, false);
 
             bool success = false;
             switch (typeId) {
@@ -1119,179 +1119,8 @@ void IEC104Client::ConnectionHandler(void* parameter, CS104_Connection con, CS10
         jsCallback.Call(args);
     });
 }
-
-   
-
-
-    
-
-/*case F_DR_TA_1: { // TypeID = 126 (список файлов)
-    if (cot == CS101_COT_REQUEST) { // COT=5 — список файлов
-        std::vector<std::pair<int, std::string>> receivedFiles;
-        uint8_t* rawData = CS101_ASDU_getPayload(asdu);
-        int payloadSize = CS101_ASDU_getPayloadSize(asdu);
-
-        printf("F_DR_TA_1 payload (size=%d): ", payloadSize);
-        for (int j = 0; j < payloadSize; j++) {
-            printf("%02x ", rawData[j]);
-        }
-        printf("\n");
-
-        int offset = 0;
-        while (offset + 7 < payloadSize) { // Минимальный размер элемента
-            // Парсим IOA (3 байта, little-endian)
-            int ioa = rawData[offset] | (rawData[offset + 1] << 8) | (rawData[offset + 2] << 16);
-            offset += 3;
-
-            // NOF (2 байта, little-endian)
-            uint16_t nof = rawData[offset] | (rawData[offset + 1] << 8);
-            offset += 2;
-
-            // LOF (2 байта, little-endian)
-            uint16_t lof = rawData[offset] | (rawData[offset + 1] << 8);
-            offset += 2;
-
-            // Длина имени файла (1 байт)
-            uint8_t nameLength = rawData[offset];
-            offset += 1;
-
-            std::string fileName;
-            if (nameLength > 0 && offset + nameLength <= payloadSize) {
-                fileName = std::string(reinterpret_cast<char*>(rawData + offset), nameLength);
-                offset += nameLength;
-            } else {
-                fileName = "File_" + std::to_string(nof);
-            }
-
-            printf("File entry: IOA=%d, NOF=%u, LOF=%u, Name=%s\n", ioa, nof, lof, fileName.c_str());
-            receivedFiles.emplace_back(ioa, fileName);
-        }
-
-        client->fileList = receivedFiles;
-
-        client->tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
-            Napi::Array fileArray = Napi::Array::New(env, receivedFiles.size());
-            for (size_t i = 0; i < receivedFiles.size(); i++) {
-                Napi::Object fileObj = Napi::Object::New(env);
-                fileObj.Set("ioa", Napi::Number::New(env, receivedFiles[i].first));
-                fileObj.Set("fileName", Napi::String::New(env, receivedFiles[i].second));
-                fileArray[i] = fileObj;
-            }
-
-            Napi::Object eventObj = Napi::Object::New(env);
-            eventObj.Set("clientID", Napi::String::New(env, client->clientID.c_str()));
-            eventObj.Set("type", Napi::String::New(env, "fileList"));
-            eventObj.Set("files", fileArray);
-            std::vector<napi_value> args = {Napi::String::New(env, "data"), eventObj};
-            jsCallback.Call(args);
-        });
-    }
-    return true;
-}
-
-       case F_FR_NA_1: { // TypeID = 120 (готовность файла)
-    for (int i = 0; i < numberOfElements; i++) {
-        FileReady io = (FileReady)CS101_ASDU_getElement(asdu, i);
-        if (io) {
-            int ioa = InformationObject_getObjectAddress((InformationObject)io);
-            uint16_t nof = FileReady_getNOF(io);
-            uint8_t frq = FileReady_getFRQ(io);
-            printf("File ready (F_FR_NA_1, COT=%d) for IOA=%d, NOF=%u, FRQ=%u, clientID: %s\n", 
-                   cot, ioa, nof, frq, client->clientID.c_str());
-            FileReady_destroy(io);
-        }
-    }
-    return true;
-}
-
-            case F_SR_NA_1: { // Секция готова (TypeID = 121)
-                for (int i = 0; i < numberOfElements; i++) {
-                    FileSegment io = (FileSegment)CS101_ASDU_getElement(asdu, i);
-                    if (io) {
-                        int ioa = InformationObject_getObjectAddress((InformationObject)io);
-                        uint16_t nos = FileSegment_getNOF(io); // Используем NOF вместо NOS для совместимости с libiec60870
-                        printf("Section ready (F_SR_NA_1) for IOA=%d, NOS=%u, clientID: %s\n", 
-                               ioa, nos, client->clientID.c_str());
-                        client->tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
-                            Napi::Object eventObj = Napi::Object::New(env);
-                            eventObj.Set("clientID", Napi::String::New(env, client->clientID.c_str()));
-                            eventObj.Set("type", Napi::String::New(env, "sectionReady"));
-                            eventObj.Set("ioa", Napi::Number::New(env, ioa));
-                            eventObj.Set("nos", Napi::Number::New(env, nos));
-                            std::vector<napi_value> args = {Napi::String::New(env, "data"), eventObj};
-                            jsCallback.Call(args);
-                        });
-                        FileSegment_destroy(io);
-                    }
-                }
-                return true;
-            }
-
-            case F_SG_NA_1: { // Передача сегмента файла (TypeID = 125)
-                for (int i = 0; i < numberOfElements; i++) {
-                    FileSegment io = (FileSegment)CS101_ASDU_getElement(asdu, i);
-                    if (io) {
-                        int ioa = InformationObject_getObjectAddress((InformationObject)io);
-                        uint8_t* segment = FileSegment_getSegmentData(io);
-                        uint8_t length = FileSegment_getLengthOfSegment(io);
-                        std::string fileName = client->getFileNameByIOA(ioa);
-                        printf("Received file segment (F_SG_NA_1) for IOA=%d, Length=%u, File=%s, clientID: %s\n", 
-                               ioa, length, fileName.c_str(), client->clientID.c_str());
-                        client->tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
-                            Napi::Object eventObj = Napi::Object::New(env);
-                            eventObj.Set("clientID", Napi::String::New(env, client->clientID.c_str()));
-                            eventObj.Set("type", Napi::String::New(env, "fileData"));
-                            eventObj.Set("ioa", Napi::Number::New(env, ioa));
-                            eventObj.Set("fileName", Napi::String::New(env, fileName));
-                            eventObj.Set("data", Napi::Buffer<uint8_t>::Copy(env, segment, length));
-                            std::vector<napi_value> args = {Napi::String::New(env, "data"), eventObj};
-                            jsCallback.Call(args);
-                        });
-                        FileSegment_destroy(io);
-                    }
-                }
-                return true;
-            }
-
-           case F_LS_NA_1: { // Конец секции (TypeID = 123)
-    for (int i = 0; i < numberOfElements; i++) {
-        InformationObject io = CS101_ASDU_getElement(asdu, i);
-        if (io) {
-            int ioa = InformationObject_getObjectAddress(io);
-            std::string fileName = client->getFileNameByIOA(ioa);
-            uint8_t* payload = CS101_ASDU_getPayload(asdu);
-            int payloadSize = CS101_ASDU_getPayloadSize(asdu);
-            printf("End of section (F_LS_NA_1) for IOA=%d, File=%s, Payload size=%d, clientID: %s\n", 
-                   ioa, fileName.c_str(), payloadSize, client->clientID.c_str());
-            client->tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
-                Napi::Object eventObj = Napi::Object::New(env);
-                eventObj.Set("clientID", Napi::String::New(env, client->clientID.c_str()));
-                eventObj.Set("type", Napi::String::New(env, "fileEnd"));
-                eventObj.Set("ioa", Napi::Number::New(env, ioa));
-                eventObj.Set("fileName", Napi::String::New(env, fileName));
-                std::vector<napi_value> args = {Napi::String::New(env, "data"), eventObj};
-                jsCallback.Call(args);
-            });
-            InformationObject_destroy(io);
-        }
-    }
-    return true;
-}
-
-            case F_AF_NA_1: { // Подтверждение передачи (TypeID = 124)
-                for (int i = 0; i < numberOfElements; i++) {
-                    FileACK io = (FileACK)CS101_ASDU_getElement(asdu, i);
-                    if (io) {
-                        int ioa = InformationObject_getObjectAddress((InformationObject)io);
-                        uint16_t nof = FileACK_getNOF(io);
-                        printf("File transfer acknowledged (F_AF_NA_1) for IOA=%d, NOF=%u, clientID: %s\n", 
-                               ioa, nof, client->clientID.c_str());
-                        FileACK_destroy(io);
-                    }
-                }
-                return true;
-            }*/
-           bool IEC104Client::RawMessageHandler(void* parameter, int address, CS101_ASDU asdu) {
+       
+    bool IEC104Client::RawMessageHandler(void* parameter, int address, CS101_ASDU asdu) {
     IEC104Client* client = static_cast<IEC104Client*>(parameter);
     IEC60870_5_TypeID typeID = CS101_ASDU_getTypeID(asdu);
     CS101_CauseOfTransmission cot = CS101_ASDU_getCOT(asdu);
@@ -1532,69 +1361,90 @@ void IEC104Client::ConnectionHandler(void* parameter, CS104_Connection con, CS10
                 }
                 break;
 
-            // Обработка данных передачи файлов (F_ types)
-            case F_DR_TA_1: { // File Directory Response (TypeID = 126)
-                if (cot == CS101_COT_REQUEST) { // COT=5 for directory response
-                    std::vector<std::pair<int, std::string>> receivedFiles;
-                    uint8_t* rawData = CS101_ASDU_getPayload(asdu);
-                    int payloadSize = CS101_ASDU_getPayloadSize(asdu);
+           
+   
+    case F_DR_TA_1: { // File Directory Response (TypeID = 126)
+        if (cot == CS101_COT_REQUEST) { // COT=5 — список файлов
+            std::vector<std::pair<int, std::string>> receivedFiles;
+            uint8_t* rawData = CS101_ASDU_getPayload(asdu);
+            int payloadSize = CS101_ASDU_getPayloadSize(asdu);
 
-                    printf("F_DR_TA_1 payload (size=%d): ", payloadSize);
-                    for (int j = 0; j < payloadSize; j++) {
-                        printf("%02x ", rawData[j]);
-                    }
-                    printf("\n");
-
-                    int offset = 0;
-                    while (offset + 7 < payloadSize) { // Minimum size: IOA(3) + NOF(2) + LOF(2)
-                        int ioa = rawData[offset] | (rawData[offset + 1] << 8) | (rawData[offset + 2] << 16);
-                        offset += 3;
-
-                        uint16_t nof = rawData[offset] | (rawData[offset + 1] << 8);
-                        offset += 2;
-
-                        uint16_t lof = rawData[offset] | (rawData[offset + 1] << 8);
-                        offset += 2;
-
-                        uint8_t nameLength = (offset < payloadSize) ? rawData[offset] : 0;
-                        offset += 1;
-
-                        std::string fileName;
-                        if (nameLength > 0 && offset + nameLength <= payloadSize) {
-                            fileName = std::string(reinterpret_cast<char*>(rawData + offset), nameLength);
-                            offset += nameLength;
-                        } else {
-                            fileName = "File_" + std::to_string(nof);
-                        }
-
-                        printf("File entry: IOA=%d, NOF=%u, LOF=%u, Name=%s\n", ioa, nof, lof, fileName.c_str());
-                        receivedFiles.emplace_back(ioa, fileName);
-                    }
-
-                    client->fileList = receivedFiles;
-
-                    client->tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
-                        Napi::Array fileArray = Napi::Array::New(env, receivedFiles.size());
-                        for (size_t i = 0; i < receivedFiles.size(); i++) {
-                            Napi::Object fileObj = Napi::Object::New(env);
-                            fileObj.Set("ioa", Napi::Number::New(env, receivedFiles[i].first));
-                            fileObj.Set("fileName", Napi::String::New(env, receivedFiles[i].second));
-                            fileArray[i] = fileObj;
-                        }
-
-                        Napi::Object eventObj = Napi::Object::New(env);
-                        eventObj.Set("clientID", Napi::String::New(env, client->clientID.c_str()));
-                        eventObj.Set("type", Napi::String::New(env, "fileList"));
-                        eventObj.Set("asdu", Napi::Number::New(env, receivedAsduAddress));
-                        eventObj.Set("files", fileArray);
-                        std::vector<napi_value> args = {Napi::String::New(env, "data"), eventObj};
-                        jsCallback.Call(args);
-                    });
-                } else {
-                    printf("Unexpected COT=%d for F_DR_TA_1, expected COT=5, clientID: %s\n", cot, client->clientID.c_str());
-                }
-                return true;
+            printf("F_DR_TA_1 payload (size=%d): ", payloadSize);
+            for (int j = 0; j < payloadSize; j++) {
+                printf("%02x ", rawData[j]);
             }
+            printf("\n");
+
+            int offset = 0;
+            while (offset + 15 <= payloadSize) { // Минимальный размер элемента: 3(IOA)+2(NOF)+3(LOF)+2(Name)+8(Time)
+                // Парсим IOA (3 байта, little-endian)
+                int ioa = rawData[offset] | (rawData[offset + 1] << 8) | (rawData[offset + 2] << 16);
+                offset += 3;
+
+                // NOF (2 байта, little-endian)
+                uint16_t nof = rawData[offset] | (rawData[offset + 1] << 8);
+                offset += 2;
+
+                // LOF (3 байта, little-endian)
+                uint32_t lof = rawData[offset] | (rawData[offset + 1] << 8) | (rawData[offset + 2] << 16);
+                offset += 3;
+
+                // Имя файла (2 байта, кодировка oscnum*10+filetype)
+                uint16_t fileCode = rawData[offset] | (rawData[offset + 1] << 8);
+                offset += 2;
+
+                // Метка времени (8 байт, игнорируем для простоты)
+                offset += 8;
+
+                // Формируем имя файла
+                char fileName[16];
+                snprintf(fileName, sizeof(fileName), "%04x", fileCode); // Например, "2b26"
+                std::string fileNameStr = std::string(fileName);
+
+                printf("Parsing F_DR_TA_1: IOA=%d, NOF=%u, LOF=%u, Name=%s, clientID: %s\n", 
+                    ioa, nof, lof, fileNameStr.c_str(), client->clientID.c_str());
+
+                printf("Adding to receivedFiles: IOA=%d, Name=%s, clientID: %s\n", 
+                    ioa, fileNameStr.c_str(), client->clientID.c_str());
+                receivedFiles.emplace_back(ioa, fileNameStr);
+                printf("Added to receivedFiles, size=%zu, clientID: %s\n", 
+                    receivedFiles.size(), client->clientID.c_str());
+            }
+
+            printf("Before assigning to client->fileList, receivedFiles size=%zu, current fileList size=%zu, clientID: %s\n", 
+                receivedFiles.size(), client->fileList.size(), client->clientID.c_str());
+            client->fileList = receivedFiles;
+            printf("Assigned to client->fileList, new size=%zu, clientID: %s\n", 
+                client->fileList.size(), client->clientID.c_str());
+
+            client->tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
+                printf("Inside tsfn.NonBlockingCall for fileList, clientID: %s\n", client->clientID.c_str());
+                Napi::Array fileArray = Napi::Array::New(env, receivedFiles.size());
+                for (size_t i = 0; i < receivedFiles.size(); i++) {
+                    Napi::Object fileObj = Napi::Object::New(env);
+                    fileObj.Set("ioa", Napi::Number::New(env, receivedFiles[i].first));
+                    fileObj.Set("fileName", Napi::String::New(env, receivedFiles[i].second));
+                    fileArray[i] = fileObj;
+                }
+
+                Napi::Object eventObj = Napi::Object::New(env);
+                eventObj.Set("clientID", Napi::String::New(env, client->clientID.c_str()));
+                eventObj.Set("type", Napi::String::New(env, "fileList"));
+                eventObj.Set("asdu", Napi::Number::New(env, receivedAsduAddress));
+                eventObj.Set("files", fileArray);
+                std::vector<napi_value> args = {Napi::String::New(env, "data"), eventObj};
+                printf("Calling JS callback for fileList, clientID: %s\n", client->clientID.c_str());
+                jsCallback.Call(args);
+                printf("JS callback for fileList completed, clientID: %s\n", client->clientID.c_str());
+            });
+
+            printf("F_DR_TA_1 processing completed, clientID: %s\n", client->clientID.c_str());
+        } else {
+            printf("Unexpected COT=%d for F_DR_TA_1, expected COT=5, clientID: %s\n", 
+                cot, client->clientID.c_str());
+        }
+        return true;
+    }
 
             case F_FR_NA_1: { // File Ready (TypeID = 120)
                 for (int i = 0; i < numberOfElements; i++) {
