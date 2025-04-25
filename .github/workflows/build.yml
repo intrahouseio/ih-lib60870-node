@@ -5,7 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
-
+å
 jobs:
   create-release:
     runs-on: ubuntu-latest
@@ -364,20 +364,32 @@ jobs:
         shell: bash
 
       # Обновление версии и публикация в npm
-      - name: Publish to npm
-        run: |
-          # Настраиваем Git для коммитов
-          git config --global user.name "GitHub Actions"
-          git config --global user.email "actions@github.com"
-          # Добавляем изменения в builds/ в индекс Git
-          git add builds/
-          # Создаем коммит с изменениями
-          git commit -m "Update builds for release" || echo "No changes to commit"
-          # Обновляем версию и создаем тег
-          npm version patch -m "Release %s with updated builds"
-          # Публикуем в npm
-          npm publish --access public
-          # Пушим изменения и тег в репозиторий
-          git push origin main --tags
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+     - name: Publish to npm
+  run:
+    # Настраиваем Git для коммитов
+    git config --global user.name "GitHub Actions"
+    git config --global user.email "actions@github.com"
+    
+    # Создаем временную копию package.json без scripts для npm
+    jq 'del(.scripts)' package.json > package_npm.json
+    
+    # Добавляем только builds/ в индекс Git
+    git add builds/
+    # Создаем коммит с изменениями (без package.json)
+    git commit -m "Update builds for release" || echo "No changes to commit"
+    
+    # Обновляем версию в оригинальном package.json
+    npm version patch -m "Release %s with updated builds"
+    
+    # Заменяем package.json на версию без scripts только для npm publish
+    mv package_npm.json package.json
+    # Публикуем в npm
+    npm publish --access public
+    
+    # Восстанавливаем оригинальный package.json с scripts
+    git checkout -- package.json
+    
+    # Пушим изменения и тег в репозиторий
+    git push origin main --tags
+  env:
+    NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

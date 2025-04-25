@@ -14,6 +14,12 @@ extern "C" {
 #include "hal_time.h"
 }
 
+struct FileInfo {
+    std::string name;
+    uint32_t size;
+    uint64_t timestamp;
+};
+
 class IEC104Client : public Napi::ObjectWrap<IEC104Client> {
 public:
     static Napi::Object Init(Napi::Env env, Napi::Object exports);
@@ -21,7 +27,10 @@ public:
     virtual ~IEC104Client();
 
 private:
+    //std::vector<FileInfo> fileList; // Изменено с std::vector<std::pair<int, std::string>>
+    std::map<uint16_t, FileInfo> fileList; // Ключ — NOF
     static Napi::FunctionReference constructor;
+    uint16_t currentNOF; // Добавляем для хранения текущего NOF
     
     int originatorAddress;
     CS104_Connection connection;
@@ -35,7 +44,7 @@ private:
     int asduAddress; 
     bool usingPrimaryIp;
 
-    std::vector<std::pair<int, std::string>> fileList; // IOA и имя файла
+    //std::vector<std::pair<int, std::string>> fileList; // IOA и имя файла
     std::map<int, std::vector<uint8_t>> fileData; // Хранение фрагментов файла по IOA
 
     Napi::ThreadSafeFunction tsfn;
@@ -54,8 +63,8 @@ private:
     Napi::Value OpenFile(const Napi::CallbackInfo& info);     // Новый метод для открытия файла
     Napi::Value RequestFileSegment(const Napi::CallbackInfo& info); // Новый метод для запроса сегмента
     Napi::Value ConfirmFileTransfer(const Napi::CallbackInfo& info); 
-
-    std::string getFileNameByIOA(int ioa); // Добавляем объявление
+    std::string getFileNameByNOF(uint16_t nof); // Заменяем getFileNameByIOA
+    
 };
 
 #endif // CS104_CLIENT_H
