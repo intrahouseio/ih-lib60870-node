@@ -1,10 +1,17 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#include <time.h>
+time_t my_timegm(struct tm* tm) {
+    return _mkgmtime(tm);
+}
 #else
 #include <unistd.h>
 #include <sys/stat.h> // Для mkdir на POSIX
+#define my_timegm timegm
 #endif
+
+
 
 #include <vector>
 #include <tuple>
@@ -1481,8 +1488,8 @@ void IEC104Client::ConnectionHandler(void* parameter, CS104_Connection con, CS10
         // Сохраняем в fileList
         client->fileList.emplace(nof, FileInfo{std::string(fileName), fileSize, msTimestamp});
 
-        printf("Parsed F_DR_TA_1 Element %d/%d: fileName=%s, NOF=%u, oscnum=%u, size=%u, timestampRaw=0x%016" PRIx64 ", timestamp=%s, ms=%u, min=%u, hour=%u, day=%u, mon=%u, year=%u, clientID: %s\n",
-               elem + 1, numberOfElements, fileName, nof, oscnum, fileSize, timestampRaw, timeStr, ms, minute, hour, day, month, year, client->clientID.c_str());
+       printf("Parsed F_DR_TA_1 Element %d/%d: fileName=%s, NOF=%u, oscnum=%u, size=%u, timestampRaw=0x%016" PRIx64 ", timestamp=%s, ms=%llu, min=%u, hour=%u, day=%u, mon=%u, year=%u, clientID: %s\n",
+       elem + 1, numberOfElements, fileName, nof, oscnum, fileSize, timestampRaw, timeStr, ms, minute, hour, day, month, year, client->clientID.c_str());
 
         // Отправляем данные в JavaScript
         client->tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
