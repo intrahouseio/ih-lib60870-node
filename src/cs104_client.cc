@@ -1478,7 +1478,7 @@ void IEC104Client::ConnectionHandler(void* parameter, CS104_Connection con, CS10
         timeinfo.tm_min = minute;
         timeinfo.tm_sec = ms / 1000;
         timeinfo.tm_isdst = -1; // Автоопределение DST
-        time_t seconds = timegm(&timeinfo);
+        time_t seconds = my_timegm(&timeinfo);
         uint64_t msTimestamp = (uint64_t)seconds * 1000 + (ms % 1000);
 
         char timeStr[32];
