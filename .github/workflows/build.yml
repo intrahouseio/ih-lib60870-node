@@ -302,8 +302,8 @@ jobs:
               tar -xzf "$artifact" -C "$target_dir" --strip-components=1
               
               # Перемещаем addon_iec60870.node из Release в корень target_dir
-              if [ -f "$target_dir/Release/addon_iec60870.node" ]; then
-                mv "$target_dir/Release/addon_iec60870.node" "$  "$target_dir/"
+              if [ -f "$target_dir/Release/addon_iec60870.node" ]; then                
+                mv "$target_dir/Release/addon_iec60870.node" "$target_dir/"
                 rm -rf "$target_dir/Release"
               else
                 mv "$target_dir/addon.node" "$target_dir/addon_iec60870.node" 2>/dev/null || true
