@@ -5,7 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
-å
+
 jobs:
   create-release:
     runs-on: ubuntu-latest
