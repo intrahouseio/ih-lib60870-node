@@ -19,8 +19,7 @@
   "files": [
     "index.js",
     "builds/",
-    "examples/",
-    ".prebuildrc"
+    "examples/"    
   ],
   "dependencies": {},
   "devDependencies": {
