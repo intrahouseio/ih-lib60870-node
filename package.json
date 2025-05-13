@@ -1,10 +1,6 @@
 {
   "name": "ih-lib60870-node",
-<<<<<<< HEAD
-  "version": "1.0.50",
-=======
-  "version": "1.0.50",
->>>>>>> e0e8a75 (new buila.yaml and package.json)
+  "version": "1.0.51",
   "description": "Cross-platform Node.js native addon of the iec60870 support",
   "main": "index.js",
   "scripts": {
