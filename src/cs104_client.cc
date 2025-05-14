@@ -183,255 +183,172 @@ Napi::Value IEC104Client::Connect(const Napi::CallbackInfo& info) {
         running = true;
         usingPrimaryIp = true;
         _thread = std::thread([this, ip, ipReserve, port, k, w, t0, t1, t2, t3, reconnectDelay]() {
-            try {
-                int retryCount = 0;
-                const int failoverDelay = 3; // 3 попытки переподключения
-                std::string currentIp = ip;
+    try {
+        int primaryRetryCount = 0;
+        int reserveRetryCount = 0;
+        const int maxRetries = 3; // Максимальное количество попыток для каждого IP
+        std::string currentIp = ip;
+        bool isPrimary = true;
+
+        while (running) {
+            printf("Attempting to connect to %s:%d (attempt %d/%d), clientID: %s\n", 
+                   currentIp.c_str(), port, (isPrimary ? primaryRetryCount : reserveRetryCount) + 1, maxRetries, clientID.c_str());
+            fflush(stdout);
+
+            // Создаем новое соединение
+            connection = CS104_Connection_create(currentIp.c_str(), port);
+            if (!connection) {
+                throw runtime_error("Failed to create connection object");
+            }
+
+            CS101_AppLayerParameters alParams = CS104_Connection_getAppLayerParameters(connection);
+            alParams->originatorAddress = this->originatorAddress;
+            alParams->sizeOfCA = 2;
+
+            CS104_APCIParameters apciParams = CS104_Connection_getAPCIParameters(connection);
+            apciParams->k = k;
+            apciParams->w = w;
+            apciParams->t0 = t0;
+            apciParams->t1 = t1;
+            apciParams->t2 = t2;
+            apciParams->t3 = t3;
+
+            CS104_Connection_setConnectionHandler(connection, ConnectionHandler, this);
+            CS104_Connection_setASDUReceivedHandler(connection, RawMessageHandler, this);
+
+            bool connectSuccess = CS104_Connection_connect(connection);
+            {
+                std::lock_guard<std::mutex> lock(this->connMutex);
+                connected = connectSuccess;
+                activated = false;
+                usingPrimaryIp = isPrimary;
+            }
+
+            if (connectSuccess) {
+                printf("Connected successfully to %s:%d, clientID: %s\n", currentIp.c_str(), port, clientID.c_str());
+                fflush(stdout);
+                primaryRetryCount = 0;
+                reserveRetryCount = 0;
 
                 while (running) {
-                    printf("Attempting to connect to %s:%d (attempt %d), clientID: %s\n", currentIp.c_str(), port, retryCount + 1, clientID.c_str());
-                    fflush(stdout);
-                    bool connectSuccess = CS104_Connection_connect(connection);
                     {
                         std::lock_guard<std::mutex> lock(this->connMutex);
-                        connected = connectSuccess;
-                        activated = false;
+                        if (!connected) break;
                     }
+                    Thread_sleep(100);
 
-                    if (connectSuccess) {
-                        printf("Connected successfully to %s:%d, clientID: %s\n", currentIp.c_str(), port, clientID.c_str());
+                    // Проверка доступности основного IP, если используется резервный
+                    if (!isPrimary && !ipReserve.empty()) {
+                        printf("Checking primary IP %s:%d availability, clientID: %s\n", ip.c_str(), port, clientID.c_str());
                         fflush(stdout);
-                        //CS104_Connection_sendStartDT(connection);
-                        retryCount = 0;
-
-                        while (running) {
-                            {
-                                std::lock_guard<std::mutex> lock(this->connMutex);
-                                if (!connected) break;
-                            }
-                            Thread_sleep(100);
-
-                            if (!usingPrimaryIp && !ipReserve.empty()) {
-                                printf("Checking primary IP %s:%d availability, clientID: %s\n", ip.c_str(), port, clientID.c_str());
-                                fflush(stdout);
-                                CS104_Connection testConn = CS104_Connection_create(ip.c_str(), port);
-                                if (testConn && CS104_Connection_connect(testConn)) {
-                                    printf("Primary IP %s restored, switching back, clientID: %s\n", ip.c_str(), clientID.c_str());
-                                    fflush(stdout);
-                                    CS104_Connection_destroy(testConn);
-
-                                    // Переключаемся на основной IP
-                                    printf("Closing current connection to %s:%d, clientID: %s\n", currentIp.c_str(), port, clientID.c_str());
-                                    fflush(stdout);
-                                    CS104_Connection_destroy(connection);
-                                    connection = nullptr;
-
-                                    {
-                                        std::lock_guard<std::mutex> lock(this->connMutex);
-                                        connected = false;
-                                        activated = false;
-                                    }
-
-                                    printf("Creating new connection to primary IP %s:%d, clientID: %s\n", ip.c_str(), port, clientID.c_str());
-                                    fflush(stdout);
-                                    connection = CS104_Connection_create(ip.c_str(), port);
-                                    if (!connection) {
-                                        printf("Failed to create connection object for primary IP %s:%d, clientID: %s\n", ip.c_str(), port, clientID.c_str());
-                                        fflush(stdout);
-                                        throw runtime_error("Failed to recreate connection object after switching back");
-                                    }
-
-                                    CS101_AppLayerParameters alParams = CS104_Connection_getAppLayerParameters(connection);
-                                    alParams->originatorAddress = this->originatorAddress;
-                                    alParams->sizeOfCA = 2;
-
-                                    CS104_APCIParameters apciParams = CS104_Connection_getAPCIParameters(connection);
-                                    apciParams->k = k;
-                                    apciParams->w = w;
-                                    apciParams->t0 = t0;
-                                    apciParams->t1 = t1;
-                                    apciParams->t2 = t2;
-                                    apciParams->t3 = t3;
-
-                                    CS104_Connection_setConnectionHandler(connection, ConnectionHandler, this);
-                                    CS104_Connection_setASDUReceivedHandler(connection, RawMessageHandler, this);
-
-                                    currentIp = ip;
-                                    usingPrimaryIp = true;
-
-                                    printf("Attempting to reconnect to primary IP %s:%d, clientID: %s\n", ip.c_str(), port, clientID.c_str());
-                                    fflush(stdout);
-                                    connectSuccess = CS104_Connection_connect(connection);
-                                    {
-                                        std::lock_guard<std::mutex> lock(this->connMutex);
-                                        connected = connectSuccess;
-                                        activated = false;
-                                    }
-                                    if (connectSuccess) {
-                                        printf("Successfully reconnected to primary IP %s:%d, clientID: %s\n", ip.c_str(), port, clientID.c_str());
-                                        fflush(stdout);
-                                        //CS104_Connection_sendStartDT(connection);
-                                    } else {
-                                        printf("Failed to reconnect to primary IP %s:%d, reverting to reserve IP, clientID: %s\n", ip.c_str(), port, clientID.c_str());
-                                        fflush(stdout);
-                                        CS104_Connection_destroy(connection);
-                                        connection = CS104_Connection_create(ipReserve.c_str(), port);
-                                        if (!connection) {
-                                            printf("Failed to create connection object for reserve IP %s:%d, clientID: %s\n", ipReserve.c_str(), port, clientID.c_str());
-                                            fflush(stdout);
-                                            throw runtime_error("Failed to recreate connection object for reserve IP");
-                                        }
-
-                                        alParams = CS104_Connection_getAppLayerParameters(connection);
-                                        alParams->originatorAddress = this->originatorAddress;
-                                        alParams->sizeOfCA = 2;
-
-                                        apciParams = CS104_Connection_getAPCIParameters(connection);
-                                        apciParams->k = k;
-                                        apciParams->w = w;
-                                        apciParams->t0 = t0;
-                                        apciParams->t1 = t1;
-                                        apciParams->t2 = t2;
-                                        apciParams->t3 = t3;
-
-                                        CS104_Connection_setConnectionHandler(connection, ConnectionHandler, this);
-                                        CS104_Connection_setASDUReceivedHandler(connection, RawMessageHandler, this);
-
-                                        currentIp = ipReserve;
-                                        usingPrimaryIp = false;
-                                        printf("Attempting to reconnect to reserve IP %s:%d, clientID: %s\n", ipReserve.c_str(), port, clientID.c_str());
-                                        fflush(stdout);
-                                        connectSuccess = CS104_Connection_connect(connection);
-                                        if (connectSuccess) {
-                                            printf("Reconnected to reserve IP %s:%d, clientID: %s\n", ipReserve.c_str(), port, clientID.c_str());
-                                            fflush(stdout);
-                                            //CS104_Connection_sendStartDT(connection);
-                                            connected = true;
-                                        } else {
-                                            printf("Failed to reconnect to reserve IP %s:%d, clientID: %s\n", ipReserve.c_str(), port, clientID.c_str());
-                                            fflush(stdout);
-                                        }
-                                    }
-                                    break; // Выходим из внутреннего цикла для работы с новым соединением
-                                } else {
-                                    printf("Primary IP %s still unavailable, clientID: %s\n", ip.c_str(), clientID.c_str());
-                                    fflush(stdout);
-                                    CS104_Connection_destroy(testConn);
-                                    Thread_sleep(5000);
-                                }
-                            }
-                        }
-
-                        std::lock_guard<std::mutex> lock(this->connMutex);
-                        if (running && !connected) {
-                            printf("Connection lost to %s:%d, clientID: %s\n", currentIp.c_str(), port, clientID.c_str());
+                        CS104_Connection testConn = CS104_Connection_create(ip.c_str(), port);
+                        if (testConn && CS104_Connection_connect(testConn)) {
+                            printf("Primary IP %s restored, switching back, clientID: %s\n", ip.c_str(), clientID.c_str());
                             fflush(stdout);
+                            CS104_Connection_destroy(testConn);
+
+                            // Закрываем текущее соединение
+                            printf("Closing current connection to %s:%d, clientID: %s\n", currentIp.c_str(), port, clientID.c_str());
                             CS104_Connection_destroy(connection);
                             connection = nullptr;
 
-                            if (usingPrimaryIp && !ipReserve.empty() && retryCount >= failoverDelay) {
-                                printf("Switching to reserve IP %s, clientID: %s\n", ipReserve.c_str(), clientID.c_str());
-                                fflush(stdout);
-                                currentIp = ipReserve;
-                                usingPrimaryIp = false;
-                                retryCount = 0;
-                            } else {
-                                currentIp = usingPrimaryIp ? ip : ipReserve;
+                            {
+                                std::lock_guard<std::mutex> lock(this->connMutex);
+                                connected = false;
+                                activated = false;
                             }
 
-                            connection = CS104_Connection_create(currentIp.c_str(), port);
-                            if (!connection) {
-                                throw runtime_error("Failed to recreate connection object");
-                            }
-                            CS101_AppLayerParameters alParams = CS104_Connection_getAppLayerParameters(connection);
-                            alParams->originatorAddress = this->originatorAddress;
-                            alParams->sizeOfCA = 2;
-                            CS104_APCIParameters apciParams = CS104_Connection_getAPCIParameters(connection);
-                            apciParams->k = k;
-                            apciParams->w = w;
-                            apciParams->t0 = t0;
-                            apciParams->t1 = t1;
-                            apciParams->t2 = t2;
-                            apciParams->t3 = t3;
-
-                            CS104_Connection_setConnectionHandler(connection, ConnectionHandler, this);
-                            CS104_Connection_setASDUReceivedHandler(connection, RawMessageHandler, this);
-                        } else if (!running && connected) {
-                            printf("Thread stopped by client, closing connection, clientID: %s\n", clientID.c_str());
-                            fflush(stdout);
-                            CS104_Connection_destroy(connection);
-                            connected = false;
-                            activated = false;
-                            return;
-                        }
-                    } else {
-                        printf("Connection failed to %s:%d, clientID: %s\n", currentIp.c_str(), port, clientID.c_str());
-                        fflush(stdout);
-                        tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
-                            Napi::Object eventObj = Napi::Object::New(env);
-                            eventObj.Set("clientID", Napi::String::New(env, clientID.c_str()));
-                            eventObj.Set("type", Napi::String::New(env, "control"));
-                            eventObj.Set("event", Napi::String::New(env, "reconnecting"));
-                            eventObj.Set("reason", Napi::String::New(env, string("attempt ") + to_string(retryCount + 1) + " to " + currentIp));
-                            std::vector<napi_value> args = {Napi::String::New(env, "data"), eventObj};
-                            jsCallback.Call(args);
-                        });
-                    }
-
-                    if (running && !connected) {
-                        retryCount++;
-                        printf("Reconnection attempt %d failed, retrying in %d seconds, clientID: %s\n", retryCount, reconnectDelay, clientID.c_str());
-                        fflush(stdout);
-                        Thread_sleep(reconnectDelay * 1000);
-
-                        if (usingPrimaryIp && !ipReserve.empty() && retryCount >= failoverDelay) {
-                            printf("Primary IP %s unresponsive, switching to reserve IP %s, clientID: %s\n", ip.c_str(), ipReserve.c_str(), clientID.c_str());
-                            fflush(stdout);
-                            CS104_Connection_destroy(connection);
-                            currentIp = ipReserve;
-                            usingPrimaryIp = false;
-                            connection = CS104_Connection_create(currentIp.c_str(), port);
-                            if (!connection) {
-                                throw runtime_error("Failed to recreate connection object for reserve IP");
-                            }
-                            CS101_AppLayerParameters alParams = CS104_Connection_getAppLayerParameters(connection);
-                            alParams->originatorAddress = this->originatorAddress;
-                            alParams->sizeOfCA = 2;
-                            CS104_APCIParameters apciParams = CS104_Connection_getAPCIParameters(connection);
-                            apciParams->k = k;
-                            apciParams->w = w;
-                            apciParams->t0 = t0;
-                            apciParams->t1 = t1;
-                            apciParams->t2 = t2;
-                            apciParams->t3 = t3;
-
-                            CS104_Connection_setConnectionHandler(connection, ConnectionHandler, this);
-                            CS104_Connection_setASDUReceivedHandler(connection, RawMessageHandler, this);
-                            retryCount = 0;
+                            currentIp = ip;
+                            isPrimary = true;
+                            primaryRetryCount = 0;
+                            break; // Выходим из внутреннего цикла для создания нового соединения
+                        } else {
+                            printf("Primary IP %s still unavailable, clientID: %s\n", ip.c_str(), clientID.c_str());
+                            CS104_Connection_destroy(testConn);
+                            Thread_sleep(5000);
                         }
                     }
                 }
-            } catch (const std::exception& e) {
-                printf("Exception in connection thread: %s, clientID: %s\n", e.what(), clientID.c_str());
+            } else {
+                printf("Connection failed to %s:%d, clientID: %s\n", currentIp.c_str(), port, clientID.c_str());
                 fflush(stdout);
-                std::lock_guard<std::mutex> lock(this->connMutex);
-                running = false;
-                if (connected) {
-                    CS104_Connection_destroy(connection);
-                    connected = false;
-                    activated = false;
-                }
                 tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
                     Napi::Object eventObj = Napi::Object::New(env);
                     eventObj.Set("clientID", Napi::String::New(env, clientID.c_str()));
                     eventObj.Set("type", Napi::String::New(env, "control"));
-                    eventObj.Set("event", Napi::String::New(env, "error"));
-                    eventObj.Set("reason", Napi::String::New(env, string("Thread exception: ") + e.what()));
+                    eventObj.Set("event", Napi::String::New(env, "reconnecting"));
+                    eventObj.Set("reason", Napi::String::New(env, string("attempt ") + to_string((isPrimary ? primaryRetryCount : reserveRetryCount) + 1) + " to " + currentIp));
+                    eventObj.Set("isPrimaryIP", Napi::Boolean::New(env, isPrimary));
                     std::vector<napi_value> args = {Napi::String::New(env, "data"), eventObj};
                     jsCallback.Call(args);
                 });
             }
+
+            if (running && !connected) {
+                // Увеличиваем счетчик попыток для текущего IP
+                if (isPrimary) {
+                    primaryRetryCount++;
+                } else {
+                    reserveRetryCount++;
+                }
+
+                // Закрываем текущее соединение
+                CS104_Connection_destroy(connection);
+                connection = nullptr;
+
+                // Логика переключения IP
+                if (isPrimary && primaryRetryCount >= maxRetries && !ipReserve.empty()) {
+                    // Переключаемся на резервный IP после maxRetries попыток
+                    printf("Primary IP %s unresponsive after %d attempts, switching to reserve IP %s, clientID: %s\n", 
+                           ip.c_str(), maxRetries, ipReserve.c_str(), clientID.c_str());
+                    currentIp = ipReserve;
+                    isPrimary = false;
+                    primaryRetryCount = 0; // Сбрасываем счетчик для основного IP
+                    reserveRetryCount = 0; // Сбрасываем счетчик для резервного IP
+                } else if (!isPrimary && reserveRetryCount >= maxRetries) {
+                    // Возвращаемся к основному IP после maxRetries попыток на резервном
+                    printf("Reserve IP %s unresponsive after %d attempts, switching back to primary IP %s, clientID: %s\n", 
+                           ipReserve.c_str(), maxRetries, ip.c_str(), clientID.c_str());
+                    currentIp = ip;
+                    isPrimary = true;
+                    reserveRetryCount = 0; // Сбрасываем счетчик для резервного IP
+                    primaryRetryCount = 0; // Сбрасываем счетчик для основного IP (для бесконечных попыток)
+                }
+
+                printf("Reconnection attempt failed, retrying in %d seconds, clientID: %s\n", reconnectDelay, clientID.c_str());
+                Thread_sleep(reconnectDelay * 1000);
+            }
+
+            // Проверяем, завершена ли работа потока
+            if (!running && connected) {
+                printf("Thread stopped by client, closing connection, clientID: %s\n", clientID.c_str());
+                CS104_Connection_destroy(connection);
+                connected = false;
+                activated = false;
+                return;
+            }
+        }
+    } catch (const std::exception& e) {
+        printf("Exception in connection thread: %s, clientID: %s\n", e.what(), clientID.c_str());
+        fflush(stdout);
+        std::lock_guard<std::mutex> lock(this->connMutex);
+        running = false;
+        if (connected) {
+            CS104_Connection_destroy(connection);
+            connected = false;
+            activated = false;
+        }
+        tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
+            Napi::Object eventObj = Napi::Object::New(env);
+            eventObj.Set("clientID", Napi::String::New(env, clientID.c_str()));
+            eventObj.Set("type", Napi::String::New(env, "control"));
+            eventObj.Set("event", Napi::String::New(env, "error"));
+            eventObj.Set("reason", Napi::String::New(env, string("Thread exception: ") + e.what()));
+            std::vector<napi_value> args = {Napi::String::New(env, "data"), eventObj};
+            jsCallback.Call(args);
         });
+    }
+});
 
         return env.Undefined();
     } catch (const std::exception& e) {
