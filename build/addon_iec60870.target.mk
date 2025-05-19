@@ -89,7 +89,7 @@ INCS_Debug := \
 	-I/Users/andreypetrov/Library/Caches/node-gyp/23.9.0/deps/uv/include \
 	-I/Users/andreypetrov/Library/Caches/node-gyp/23.9.0/deps/zlib \
 	-I/Users/andreypetrov/Library/Caches/node-gyp/23.9.0/deps/v8/include \
-	-I/Users/andreypetrov/Downloads/addon_iec60870--/node_modules/node-addon-api \
+	-I/Users/andreypetrov/Downloads/ih-lib60870-node/node_modules/node-addon-api \
 	-I$(srcdir)/lib/src/inc/api \
 	-I$(srcdir)/lib/src/inc/internal \
 	-I$(srcdir)/lib/src/hal/inc \
@@ -151,7 +151,7 @@ INCS_Release := \
 	-I/Users/andreypetrov/Library/Caches/node-gyp/23.9.0/deps/uv/include \
 	-I/Users/andreypetrov/Library/Caches/node-gyp/23.9.0/deps/zlib \
 	-I/Users/andreypetrov/Library/Caches/node-gyp/23.9.0/deps/v8/include \
-	-I/Users/andreypetrov/Downloads/addon_iec60870--/node_modules/node-addon-api \
+	-I/Users/andreypetrov/Downloads/ih-lib60870-node/node_modules/node-addon-api \
 	-I$(srcdir)/lib/src/inc/api \
 	-I$(srcdir)/lib/src/inc/internal \
 	-I$(srcdir)/lib/src/hal/inc \
@@ -228,7 +228,7 @@ LIBTOOLFLAGS_Release := \
 	-Wl,-search_paths_first
 
 LIBS := \
-	/Users/andreypetrov/Downloads/addon_iec60870--/lib/build/lib60870_darwin_arm64.a
+	/Users/andreypetrov/Downloads/ih-lib60870-node/lib/build/lib60870_darwin_arm64.a
 
 $(builddir)/addon_iec60870.node: GYP_LDFLAGS := $(LDFLAGS_$(BUILDTYPE))
 $(builddir)/addon_iec60870.node: LIBS := $(LIBS)

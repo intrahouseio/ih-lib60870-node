@@ -299,17 +299,17 @@ const client = new IEC104Client((event, data) => {
         client.sendStartDT();
     }
     console.log(`Server 1 Event: ${event}, Data: ${util.inspect(data)}`);
-    if (data.event === 'activated') { // 
+    /*if (data.event === 'activated') { // 
         client.sendCommands([
-            { typeId: 100, ioa: 0, value: 20 }, // C_IC_NA_1: Команда опроса
+            { typeId: 100, ioa: 0, value: 20, asdu: 1 }, // C_IC_NA_1: Команда опроса
             { typeId: 45, ioa: 145, value: true, asdu: 1, bselCmd: true, ql: 1 }, // C_SC_NA_1: Включить
             { typeId: 46, ioa: 146, value: 1, asdu: 1, bselCmd: 1, ql: 0 }, // C_DC_NA_1: Включить
             { typeId: 47, ioa: 147, value: 1, asdu: 1, bselCmd: 1, ql: 0 }, // C_RC_NA_1: Увеличить
-            { typeId: 48, ioa: 148, value: 0.001, asdu: 1, bselCmd: 1, ql: 0 }, // C_SE_NA_1: Уставка нормализованная (selCmd исправлено на bselCmd)
+            { typeId: 48, ioa: 148, value: "0.001", asdu: 1, bselCmd: 1, ql: 0 }, // C_SE_NA_1: Уставка нормализованная (selCmd исправлено на bselCmd)
             { typeId: 49, ioa: 149, value: 5000, asdu: 1, bselCmd: 1, ql: 0 }, // C_SE_NB_1: Уставка масштабированная
-            { typeId: 50, ioa: 150, value: 123.45, asdu: 1 } // C_SE_NC_1: Уставка с плавающей точкой
+            { typeId: 50, ioa: 150, value: "123.45", asdu: 1 } // C_SE_NC_1: Уставка с плавающей точкой
         ]); 
-    }
+    }*/
 });
 
 /*const client2 = new IEC104Client((event, data) => {
@@ -323,7 +323,7 @@ async function main() {
     const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
     client.connect({
-        ip: "192.168.0.102",
+        ip: "127.0.0.1",
         port: 2404,
         clientID: "client1",
         ipReserve: "192.168.0.11",

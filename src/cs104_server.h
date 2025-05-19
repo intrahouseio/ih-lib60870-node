@@ -14,6 +14,8 @@ extern "C" {
 #include "hal_time.h"
 }
 
+
+
 class IEC104Server : public Napi::ObjectWrap<IEC104Server> {
 public:
     static Napi::Object Init(Napi::Env env, Napi::Object exports);
@@ -38,7 +40,13 @@ private:
     Napi::ThreadSafeFunction tsfn;
     bool running;
     bool started;
+    //static thread_local std::string lastIpAddress;
     std::map<IMasterConnection, int> clientConnections; // Map of client connections to client IDs
+    
+   
+   // Хранилища для клиентских подключений    
+    std::map<IMasterConnection, std::string> clientIdStrMap;
+    std::map<std::string, int> ipConnectionCounts;
 
     static bool ConnectionRequestHandler(void *parameter, const char *ipAddress);
     static void ConnectionEventHandler(void *parameter, IMasterConnection connection, CS104_PeerConnectionEvent event);

@@ -1122,7 +1122,7 @@ void IEC104Client::ConnectionHandler(void* parameter, CS104_Connection con, CS10
                         SinglePointInformation io = (SinglePointInformation)CS101_ASDU_getElement(asdu, i);
                         if (io) {
                             int ioa = InformationObject_getObjectAddress((InformationObject)io);
-                            double val = SinglePointInformation_getValue(io) ? 1.0 : 0.0;
+                            float val = SinglePointInformation_getValue(io) ? 1.0 : 0.0;
                             uint8_t quality = SinglePointInformation_getQuality(io);
                             uint64_t timestamp = 0;
                             elements.emplace_back(ioa, val, quality, timestamp);
@@ -1136,7 +1136,7 @@ void IEC104Client::ConnectionHandler(void* parameter, CS104_Connection con, CS10
                         DoublePointInformation io = (DoublePointInformation)CS101_ASDU_getElement(asdu, i);
                         if (io) {
                             int ioa = InformationObject_getObjectAddress((InformationObject)io);
-                            double val = static_cast<double>(DoublePointInformation_getValue(io));
+                            float val = static_cast<double>(DoublePointInformation_getValue(io));
                             uint8_t quality = DoublePointInformation_getQuality(io);
                             uint64_t timestamp = 0;
                             elements.emplace_back(ioa, val, quality, timestamp);
@@ -1150,7 +1150,7 @@ void IEC104Client::ConnectionHandler(void* parameter, CS104_Connection con, CS10
                         StepPositionInformation io = (StepPositionInformation)CS101_ASDU_getElement(asdu, i);
                         if (io) {
                             int ioa = InformationObject_getObjectAddress((InformationObject)io);
-                            double val = static_cast<double>(StepPositionInformation_getValue(io));
+                            float val = static_cast<double>(StepPositionInformation_getValue(io));
                             uint8_t quality = StepPositionInformation_getQuality(io);
                             uint64_t timestamp = 0;
                             elements.emplace_back(ioa, val, quality, timestamp);
@@ -1164,7 +1164,7 @@ void IEC104Client::ConnectionHandler(void* parameter, CS104_Connection con, CS10
                         BitString32 io = (BitString32)CS101_ASDU_getElement(asdu, i);
                         if (io) {
                             int ioa = InformationObject_getObjectAddress((InformationObject)io);
-                            double val = static_cast<double>(BitString32_getValue(io));
+                            float val = static_cast<double>(BitString32_getValue(io));
                             uint8_t quality = BitString32_getQuality(io);
                             uint64_t timestamp = 0;
                             elements.emplace_back(ioa, val, quality, timestamp);
@@ -1178,7 +1178,7 @@ void IEC104Client::ConnectionHandler(void* parameter, CS104_Connection con, CS10
                         MeasuredValueNormalized io = (MeasuredValueNormalized)CS101_ASDU_getElement(asdu, i);
                         if (io) {
                             int ioa = InformationObject_getObjectAddress((InformationObject)io);
-                            double val = MeasuredValueNormalized_getValue(io);
+                            float val = MeasuredValueNormalized_getValue(io);
                             uint8_t quality = MeasuredValueNormalized_getQuality(io);
                             uint64_t timestamp = 0;
                             elements.emplace_back(ioa, val, quality, timestamp);
@@ -1192,7 +1192,7 @@ void IEC104Client::ConnectionHandler(void* parameter, CS104_Connection con, CS10
                         MeasuredValueScaled io = (MeasuredValueScaled)CS101_ASDU_getElement(asdu, i);
                         if (io) {
                             int ioa = InformationObject_getObjectAddress((InformationObject)io);
-                            double val = MeasuredValueScaled_getValue(io);
+                            float val = MeasuredValueScaled_getValue(io);
                             uint8_t quality = MeasuredValueScaled_getQuality(io);
                             uint64_t timestamp = 0;
                             elements.emplace_back(ioa, val, quality, timestamp);
@@ -1206,7 +1206,7 @@ void IEC104Client::ConnectionHandler(void* parameter, CS104_Connection con, CS10
                         MeasuredValueShort io = (MeasuredValueShort)CS101_ASDU_getElement(asdu, i);
                         if (io) {
                             int ioa = InformationObject_getObjectAddress((InformationObject)io);
-                            double val = MeasuredValueShort_getValue(io);
+                            float val = MeasuredValueShort_getValue(io);
                             uint8_t quality = MeasuredValueShort_getQuality(io);
                             uint64_t timestamp = 0;
                             elements.emplace_back(ioa, val, quality, timestamp);
@@ -1220,7 +1220,7 @@ void IEC104Client::ConnectionHandler(void* parameter, CS104_Connection con, CS10
                         IntegratedTotals io = (IntegratedTotals)CS101_ASDU_getElement(asdu, i);
                         if (io) {
                             int ioa = InformationObject_getObjectAddress((InformationObject)io);
-                            double val = BinaryCounterReading_getValue(IntegratedTotals_getBCR(io));
+                            float val = BinaryCounterReading_getValue(IntegratedTotals_getBCR(io));
                             uint8_t quality = IEC60870_QUALITY_GOOD;
                             uint64_t timestamp = 0;
                             elements.emplace_back(ioa, val, quality, timestamp);
@@ -1234,7 +1234,7 @@ void IEC104Client::ConnectionHandler(void* parameter, CS104_Connection con, CS10
                         SinglePointWithCP56Time2a io = (SinglePointWithCP56Time2a)CS101_ASDU_getElement(asdu, i);
                         if (io) {
                             int ioa = InformationObject_getObjectAddress((InformationObject)io);
-                            double val = SinglePointInformation_getValue((SinglePointInformation)io) ? 1.0 : 0.0;
+                            float val = SinglePointInformation_getValue((SinglePointInformation)io) ? 1.0 : 0.0;
                             uint8_t quality = SinglePointInformation_getQuality((SinglePointInformation)io);
                             uint64_t timestamp = CP56Time2a_toMsTimestamp(SinglePointWithCP56Time2a_getTimestamp(io));
                             elements.emplace_back(ioa, val, quality, timestamp);
@@ -1248,7 +1248,7 @@ void IEC104Client::ConnectionHandler(void* parameter, CS104_Connection con, CS10
                         DoublePointWithCP56Time2a io = (DoublePointWithCP56Time2a)CS101_ASDU_getElement(asdu, i);
                         if (io) {
                             int ioa = InformationObject_getObjectAddress((InformationObject)io);
-                            double val = static_cast<double>(DoublePointInformation_getValue((DoublePointInformation)io));
+                            float val = static_cast<double>(DoublePointInformation_getValue((DoublePointInformation)io));
                             uint8_t quality = DoublePointInformation_getQuality((DoublePointInformation)io);
                             uint64_t timestamp = CP56Time2a_toMsTimestamp(DoublePointWithCP56Time2a_getTimestamp(io));
                             elements.emplace_back(ioa, val, quality, timestamp);
@@ -1262,7 +1262,7 @@ void IEC104Client::ConnectionHandler(void* parameter, CS104_Connection con, CS10
                         StepPositionWithCP56Time2a io = (StepPositionWithCP56Time2a)CS101_ASDU_getElement(asdu, i);
                         if (io) {
                             int ioa = InformationObject_getObjectAddress((InformationObject)io);
-                            double val = static_cast<double>(StepPositionInformation_getValue((StepPositionInformation)io));
+                            float val = static_cast<double>(StepPositionInformation_getValue((StepPositionInformation)io));
                             uint8_t quality = StepPositionInformation_getQuality((StepPositionInformation)io);
                             uint64_t timestamp = CP56Time2a_toMsTimestamp(StepPositionWithCP56Time2a_getTimestamp(io));
                             elements.emplace_back(ioa, val, quality, timestamp);
@@ -1276,7 +1276,7 @@ void IEC104Client::ConnectionHandler(void* parameter, CS104_Connection con, CS10
                         Bitstring32WithCP56Time2a io = (Bitstring32WithCP56Time2a)CS101_ASDU_getElement(asdu, i);
                         if (io) {
                             int ioa = InformationObject_getObjectAddress((InformationObject)io);
-                            double val = static_cast<double>(BitString32_getValue((BitString32)io));
+                            float val = static_cast<double>(BitString32_getValue((BitString32)io));
                             uint8_t quality = BitString32_getQuality((BitString32)io);
                             uint64_t timestamp = CP56Time2a_toMsTimestamp(Bitstring32WithCP56Time2a_getTimestamp(io));
                             elements.emplace_back(ioa, val, quality, timestamp);
@@ -1290,7 +1290,7 @@ void IEC104Client::ConnectionHandler(void* parameter, CS104_Connection con, CS10
                         MeasuredValueNormalizedWithCP56Time2a io = (MeasuredValueNormalizedWithCP56Time2a)CS101_ASDU_getElement(asdu, i);
                         if (io) {
                             int ioa = InformationObject_getObjectAddress((InformationObject)io);
-                            double val = MeasuredValueNormalized_getValue((MeasuredValueNormalized)io);
+                            float val = MeasuredValueNormalized_getValue((MeasuredValueNormalized)io);                            
                             uint8_t quality = MeasuredValueNormalized_getQuality((MeasuredValueNormalized)io);
                             uint64_t timestamp = CP56Time2a_toMsTimestamp(MeasuredValueNormalizedWithCP56Time2a_getTimestamp(io));
                             elements.emplace_back(ioa, val, quality, timestamp);
@@ -1304,7 +1304,7 @@ void IEC104Client::ConnectionHandler(void* parameter, CS104_Connection con, CS10
                         MeasuredValueScaledWithCP56Time2a io = (MeasuredValueScaledWithCP56Time2a)CS101_ASDU_getElement(asdu, i);
                         if (io) {
                             int ioa = InformationObject_getObjectAddress((InformationObject)io);
-                            double val = MeasuredValueScaled_getValue((MeasuredValueScaled)io);
+                            float val = MeasuredValueScaled_getValue((MeasuredValueScaled)io);
                             uint8_t quality = MeasuredValueScaled_getQuality((MeasuredValueScaled)io);
                             uint64_t timestamp = CP56Time2a_toMsTimestamp(MeasuredValueScaledWithCP56Time2a_getTimestamp(io));
                             elements.emplace_back(ioa, val, quality, timestamp);
@@ -1318,7 +1318,7 @@ void IEC104Client::ConnectionHandler(void* parameter, CS104_Connection con, CS10
                         MeasuredValueShortWithCP56Time2a io = (MeasuredValueShortWithCP56Time2a)CS101_ASDU_getElement(asdu, i);
                         if (io) {
                             int ioa = InformationObject_getObjectAddress((InformationObject)io);
-                            double val = MeasuredValueShort_getValue((MeasuredValueShort)io);
+                            float val = MeasuredValueShort_getValue((MeasuredValueShort)io);                           
                             uint8_t quality = MeasuredValueShort_getQuality((MeasuredValueShort)io);
                             uint64_t timestamp = CP56Time2a_toMsTimestamp(MeasuredValueShortWithCP56Time2a_getTimestamp(io));
                             elements.emplace_back(ioa, val, quality, timestamp);
@@ -1332,7 +1332,7 @@ void IEC104Client::ConnectionHandler(void* parameter, CS104_Connection con, CS10
                         IntegratedTotalsWithCP56Time2a io = (IntegratedTotalsWithCP56Time2a)CS101_ASDU_getElement(asdu, i);
                         if (io) {
                             int ioa = InformationObject_getObjectAddress((InformationObject)io);
-                            double val = BinaryCounterReading_getValue(IntegratedTotals_getBCR((IntegratedTotals)io));
+                            float val = BinaryCounterReading_getValue(IntegratedTotals_getBCR((IntegratedTotals)io));
                             uint8_t quality = IEC60870_QUALITY_GOOD;
                             uint64_t timestamp = CP56Time2a_toMsTimestamp(IntegratedTotalsWithCP56Time2a_getTimestamp(io));
                             elements.emplace_back(ioa, val, quality, timestamp);

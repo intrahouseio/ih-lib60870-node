@@ -15,7 +15,7 @@ const server = new IEC104Server((event, data) => {
                         console.log(`Received Single Command: clientId=${clientId}, ioa=${ioa}, value=${val}, asduAddress=${asduAddress}`);
                         // Response: sending the current value as M_SP_NA_1
                         server.sendCommands(clientId, [
-                            { typeId: 1, ioa: ioa, value: val === 1, asduAddress: asduAddress }
+                            { typeId: 1, ioa: ioa, value: val === 1, asduAddress: asduAddress, quality: quality, timestamp: timestamp }
                         ]);
                         break;
 
@@ -174,7 +174,7 @@ console.log(`Starting IEC 104 Server on port ${port} with serverID: ${serverID}`
 server.start({
     port: port,
     serverID: serverID,
-    ipReserve: "192.168.1.2",
+    ipReserve: "127.0.0.1",
     params: {
         originatorAddress: 1,
         k: 12,
@@ -194,14 +194,14 @@ setTimeout(() => {
 }, 2000);
 
 // Example of sending spontaneous data after 5 seconds
-setTimeout(() => {
+setInterval(() => {
     const status = server.getStatus();
     if (status.connectedClients.length > 0) {
         const clientId = status.connectedClients[0];
         console.log(`Sending spontaneous data to client ${clientId}`);
         server.sendCommands(clientId, [
-            { typeId: 1, ioa: 10, value: true, asduAddress: 1 },                    // M_SP_NA_1
-            { typeId: 13, ioa: 11, value: 42.7, timestamp: Date.now(), asduAddress: 1 } // M_ME_TF_1
+            //{ typeId: 1, ioa: 10, value: true, asduAddress: 1 },                    // M_SP_NA_1
+            { typeId: 36, ioa: 11, value: 0.001, timestamp: Date.now(), asduAddress: 1 } // M_ME_TF_1
         ]);
     } else {
         console.log('No clients connected to send spontaneous data');
@@ -211,6 +211,6 @@ setTimeout(() => {
 // Handling process termination
 process.on('SIGINT', () => {
     console.log('Stopping server...');
-    server.stop();
+   // server.stop();
     process.exit(0);
 });
