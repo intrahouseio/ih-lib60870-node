@@ -953,7 +953,7 @@ void IEC104Server::ConnectionEventHandler(void* parameter, IMasterConnection con
                 std::string ipPort = ipBuffer;
                 size_t colonPos = ipPort.find(':');
                 std::string ip = (colonPos != std::string::npos) ? ipPort.substr(0, colonPos) : ipPort;
-:
+
                 server->ipConnectionCounts[ip]++;
                 int count = server->ipConnectionCounts[ip];
                 clientIdStr = ip + "_" + std::to_string(count);
