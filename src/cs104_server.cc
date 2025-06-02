@@ -1038,7 +1038,7 @@ bool IEC104Server::RawMessageHandler(void* parameter, IMasterConnection connecti
     }
 
     try {
-        vector<tuple<int, double, uint8_t, uint64_t>> elements;
+        vector<tuple<int, double, uint8_t, uint64_t, bool, int>> elements;
 
         switch (typeID) {
             case C_SC_NA_1: {
@@ -1049,7 +1049,9 @@ bool IEC104Server::RawMessageHandler(void* parameter, IMasterConnection connecti
                         double val = SingleCommand_getState(io) ? 1.0 : 0.0;
                         uint8_t quality = IEC60870_QUALITY_GOOD;
                         uint64_t timestamp = 0;
-                        elements.emplace_back(ioa, val, quality, timestamp);
+                        bool bselCmd = SingleCommand_isSelect(io);
+                        int ql = SingleCommand_getQU(io);
+                        elements.emplace_back(ioa, val, quality, timestamp, bselCmd, ql);
                         SingleCommand_destroy(io);
                     }
                 }
@@ -1063,7 +1065,9 @@ bool IEC104Server::RawMessageHandler(void* parameter, IMasterConnection connecti
                         double val = static_cast<double>(DoubleCommand_getState(io));
                         uint8_t quality = IEC60870_QUALITY_GOOD;
                         uint64_t timestamp = 0;
-                        elements.emplace_back(ioa, val, quality, timestamp);
+                        bool bselCmd = DoubleCommand_isSelect(io);
+                        int ql = DoubleCommand_getQU(io);
+                        elements.emplace_back(ioa, val, quality, timestamp, bselCmd, ql);
                         DoubleCommand_destroy(io);
                     }
                 }
@@ -1077,7 +1081,9 @@ bool IEC104Server::RawMessageHandler(void* parameter, IMasterConnection connecti
                         double val = static_cast<double>(StepCommand_getState(io));
                         uint8_t quality = IEC60870_QUALITY_GOOD;
                         uint64_t timestamp = 0;
-                        elements.emplace_back(ioa, val, quality, timestamp);
+                        bool bselCmd = StepCommand_isSelect(io);
+                        int ql = StepCommand_getQU(io);
+                        elements.emplace_back(ioa, val, quality, timestamp, bselCmd, ql);
                         StepCommand_destroy(io);
                     }
                 }
@@ -1091,7 +1097,9 @@ bool IEC104Server::RawMessageHandler(void* parameter, IMasterConnection connecti
                         double val = SetpointCommandNormalized_getValue(io);
                         uint8_t quality = IEC60870_QUALITY_GOOD;
                         uint64_t timestamp = 0;
-                        elements.emplace_back(ioa, val, quality, timestamp);
+                        bool bselCmd = SetpointCommandNormalized_isSelect(io);
+                        int ql = SetpointCommandNormalized_getQL(io);
+                        elements.emplace_back(ioa, val, quality, timestamp, bselCmd, ql);
                         SetpointCommandNormalized_destroy(io);
                     }
                 }
@@ -1105,7 +1113,9 @@ bool IEC104Server::RawMessageHandler(void* parameter, IMasterConnection connecti
                         double val = SetpointCommandScaled_getValue(io);
                         uint8_t quality = IEC60870_QUALITY_GOOD;
                         uint64_t timestamp = 0;
-                        elements.emplace_back(ioa, val, quality, timestamp);
+                        bool bselCmd = SetpointCommandScaled_isSelect(io);
+                        int ql = SetpointCommandScaled_getQL(io);
+                        elements.emplace_back(ioa, val, quality, timestamp, bselCmd, ql);
                         SetpointCommandScaled_destroy(io);
                     }
                 }
@@ -1119,7 +1129,9 @@ bool IEC104Server::RawMessageHandler(void* parameter, IMasterConnection connecti
                         double val = SetpointCommandShort_getValue(io);
                         uint8_t quality = IEC60870_QUALITY_GOOD;
                         uint64_t timestamp = 0;
-                        elements.emplace_back(ioa, val, quality, timestamp);
+                        bool bselCmd = SetpointCommandShort_isSelect(io);
+                        int ql = SetpointCommandShort_getQL(io);
+                        elements.emplace_back(ioa, val, quality, timestamp, bselCmd, ql);
                         SetpointCommandShort_destroy(io);
                     }
                 }
@@ -1133,7 +1145,9 @@ bool IEC104Server::RawMessageHandler(void* parameter, IMasterConnection connecti
                         double val = static_cast<double>(Bitstring32Command_getValue(io));
                         uint8_t quality = IEC60870_QUALITY_GOOD;
                         uint64_t timestamp = 0;
-                        elements.emplace_back(ioa, val, quality, timestamp);
+                        bool bselCmd = false;
+                        int ql = 0;
+                        elements.emplace_back(ioa, val, quality, timestamp, bselCmd, ql);
                         Bitstring32Command_destroy(io);
                     }
                 }
@@ -1147,7 +1161,9 @@ bool IEC104Server::RawMessageHandler(void* parameter, IMasterConnection connecti
                         double val = SingleCommand_getState((SingleCommand)io) ? 1.0 : 0.0;
                         uint8_t quality = IEC60870_QUALITY_GOOD;
                         uint64_t timestamp = CP56Time2a_toMsTimestamp(SingleCommandWithCP56Time2a_getTimestamp(io));
-                        elements.emplace_back(ioa, val, quality, timestamp);
+                        bool bselCmd = SingleCommand_isSelect((SingleCommand)io);
+                        int ql = SingleCommand_getQU((SingleCommand)io);
+                        elements.emplace_back(ioa, val, quality, timestamp, bselCmd, ql);
                         SingleCommandWithCP56Time2a_destroy(io);
                     }
                 }
@@ -1161,7 +1177,9 @@ bool IEC104Server::RawMessageHandler(void* parameter, IMasterConnection connecti
                         double val = static_cast<double>(DoubleCommand_getState((DoubleCommand)io));
                         uint8_t quality = IEC60870_QUALITY_GOOD;
                         uint64_t timestamp = CP56Time2a_toMsTimestamp(DoubleCommandWithCP56Time2a_getTimestamp(io));
-                        elements.emplace_back(ioa, val, quality, timestamp);
+                        bool bselCmd = DoubleCommand_isSelect((DoubleCommand)io);
+                        int ql = DoubleCommand_getQU((DoubleCommand)io);
+                        elements.emplace_back(ioa, val, quality, timestamp, bselCmd, ql);
                         DoubleCommandWithCP56Time2a_destroy(io);
                     }
                 }
@@ -1175,7 +1193,9 @@ bool IEC104Server::RawMessageHandler(void* parameter, IMasterConnection connecti
                         double val = static_cast<double>(StepCommand_getState((StepCommand)io));
                         uint8_t quality = IEC60870_QUALITY_GOOD;
                         uint64_t timestamp = CP56Time2a_toMsTimestamp(StepCommandWithCP56Time2a_getTimestamp(io));
-                        elements.emplace_back(ioa, val, quality, timestamp);
+                        bool bselCmd = StepCommand_isSelect((StepCommand)io);
+                        int ql = StepCommand_getQU((StepCommand)io);
+                        elements.emplace_back(ioa, val, quality, timestamp, bselCmd, ql);
                         StepCommandWithCP56Time2a_destroy(io);
                     }
                 }
@@ -1189,7 +1209,9 @@ bool IEC104Server::RawMessageHandler(void* parameter, IMasterConnection connecti
                         double val = SetpointCommandNormalized_getValue((SetpointCommandNormalized)io);
                         uint8_t quality = IEC60870_QUALITY_GOOD;
                         uint64_t timestamp = CP56Time2a_toMsTimestamp(SetpointCommandNormalizedWithCP56Time2a_getTimestamp(io));
-                        elements.emplace_back(ioa, val, quality, timestamp);
+                        bool bselCmd = SetpointCommandNormalized_isSelect((SetpointCommandNormalized)io);
+                        int ql = SetpointCommandNormalized_getQL((SetpointCommandNormalized)io);
+                        elements.emplace_back(ioa, val, quality, timestamp, bselCmd, ql);
                         SetpointCommandNormalizedWithCP56Time2a_destroy(io);
                     }
                 }
@@ -1203,7 +1225,9 @@ bool IEC104Server::RawMessageHandler(void* parameter, IMasterConnection connecti
                         double val = SetpointCommandScaled_getValue((SetpointCommandScaled)io);
                         uint8_t quality = IEC60870_QUALITY_GOOD;
                         uint64_t timestamp = CP56Time2a_toMsTimestamp(SetpointCommandScaledWithCP56Time2a_getTimestamp(io));
-                        elements.emplace_back(ioa, val, quality, timestamp);
+                        bool bselCmd = SetpointCommandScaled_isSelect((SetpointCommandScaled)io);
+                        int ql = SetpointCommandScaled_getQL((SetpointCommandScaled)io);
+                        elements.emplace_back(ioa, val, quality, timestamp, bselCmd, ql);
                         SetpointCommandScaledWithCP56Time2a_destroy(io);
                     }
                 }
@@ -1217,7 +1241,9 @@ bool IEC104Server::RawMessageHandler(void* parameter, IMasterConnection connecti
                         double val = SetpointCommandShort_getValue((SetpointCommandShort)io);
                         uint8_t quality = IEC60870_QUALITY_GOOD;
                         uint64_t timestamp = CP56Time2a_toMsTimestamp(SetpointCommandShortWithCP56Time2a_getTimestamp(io));
-                        elements.emplace_back(ioa, val, quality, timestamp);
+                        bool bselCmd = SetpointCommandShort_isSelect((SetpointCommandShort)io);
+                        int ql = SetpointCommandShort_getQL((SetpointCommandShort)io);
+                        elements.emplace_back(ioa, val, quality, timestamp, bselCmd, ql);
                         SetpointCommandShortWithCP56Time2a_destroy(io);
                     }
                 }
@@ -1231,7 +1257,9 @@ bool IEC104Server::RawMessageHandler(void* parameter, IMasterConnection connecti
                         double val = static_cast<double>(Bitstring32Command_getValue((Bitstring32Command)io));
                         uint8_t quality = IEC60870_QUALITY_GOOD;
                         uint64_t timestamp = CP56Time2a_toMsTimestamp(Bitstring32CommandWithCP56Time2a_getTimestamp(io));
-                        elements.emplace_back(ioa, val, quality, timestamp);
+                        bool bselCmd = false;
+                        int ql = 0;
+                        elements.emplace_back(ioa, val, quality, timestamp, bselCmd, ql);
                         Bitstring32CommandWithCP56Time2a_destroy(io);
                     }
                 }
@@ -1245,7 +1273,9 @@ bool IEC104Server::RawMessageHandler(void* parameter, IMasterConnection connecti
                         double val = InterrogationCommand_getQOI(io);
                         uint8_t quality = IEC60870_QUALITY_GOOD;
                         uint64_t timestamp = 0;
-                        elements.emplace_back(ioa, val, quality, timestamp);
+                        bool bselCmd = false;
+                        int ql = 0;
+                        elements.emplace_back(ioa, val, quality, timestamp, bselCmd, ql);
                         InterrogationCommand_destroy(io);
                     }
                 }
@@ -1259,7 +1289,9 @@ bool IEC104Server::RawMessageHandler(void* parameter, IMasterConnection connecti
                         double val = CounterInterrogationCommand_getQCC(io);
                         uint8_t quality = IEC60870_QUALITY_GOOD;
                         uint64_t timestamp = 0;
-                        elements.emplace_back(ioa, val, quality, timestamp);
+                        bool bselCmd = false;
+                        int ql = 0;
+                        elements.emplace_back(ioa, val, quality, timestamp, bselCmd, ql);
                         CounterInterrogationCommand_destroy(io);
                     }
                 }
@@ -1273,7 +1305,9 @@ bool IEC104Server::RawMessageHandler(void* parameter, IMasterConnection connecti
                         double val = 0;
                         uint8_t quality = IEC60870_QUALITY_GOOD;
                         uint64_t timestamp = 0;
-                        elements.emplace_back(ioa, val, quality, timestamp);
+                        bool bselCmd = false;
+                        int ql = 0;
+                        elements.emplace_back(ioa, val, quality, timestamp, bselCmd, ql);
                         ReadCommand_destroy(io);
                     }
                 }
@@ -1287,7 +1321,9 @@ bool IEC104Server::RawMessageHandler(void* parameter, IMasterConnection connecti
                         double val = 0;
                         uint8_t quality = IEC60870_QUALITY_GOOD;
                         uint64_t timestamp = CP56Time2a_toMsTimestamp(ClockSynchronizationCommand_getTime(io));
-                        elements.emplace_back(ioa, val, quality, timestamp);
+                        bool bselCmd = false;
+                        int ql = 0;
+                        elements.emplace_back(ioa, val, quality, timestamp, bselCmd, ql);
                         ClockSynchronizationCommand_destroy(io);
                     }
                 }
@@ -1300,16 +1336,16 @@ bool IEC104Server::RawMessageHandler(void* parameter, IMasterConnection connecti
                 return false;
         }
 
-        for (const auto& [ioa, val, quality, timestamp] : elements) {
-            printf("ASDU type: %s, serverID: %s, clientId: %i, asduAddress: %d, ioa: %i, value: %f, quality: %u, timestamp: %" PRIu64 ", cnt: %i\n",
-                   TypeID_toString(typeID), server->serverID.c_str(), clientId, receivedAsduAddress, ioa, val, quality, timestamp, server->cnt);
+        for (const auto& [ioa, val, quality, timestamp, bselCmd, ql] : elements) {
+            printf("ASDU type: %s, serverID: %s, clientId: %i, asduAddress: %d, ioa: %i, value: %f, quality: %u, timestamp: %" PRIu64 ", bselCmd: %d, ql: %d, cnt: %i\n",
+                   TypeID_toString(typeID), server->serverID.c_str(), clientId, receivedAsduAddress, ioa, val, quality, timestamp, bselCmd, ql, server->cnt);
             fflush(stdout);
         }
 
         server->tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
             Napi::Array jsArray = Napi::Array::New(env, elements.size());
             for (size_t i = 0; i < elements.size(); i++) {
-                const auto& [ioa, val, quality, timestamp] = elements[i];
+                const auto& [ioa, val, quality, timestamp, bselCmd, ql] = elements[i];
                 Napi::Object msg = Napi::Object::New(env);
                 msg.Set("serverID", Napi::String::New(env, server->serverID));
                 msg.Set("clientId", Napi::Number::New(env, clientId));
@@ -1319,6 +1355,8 @@ bool IEC104Server::RawMessageHandler(void* parameter, IMasterConnection connecti
                 msg.Set("ioa", Napi::Number::New(env, ioa));
                 msg.Set("val", Napi::Number::New(env, val));
                 msg.Set("quality", Napi::Number::New(env, quality));
+                msg.Set("bselCmd", Napi::Boolean::New(env, bselCmd));
+                msg.Set("ql", Napi::Number::New(env, ql));
                 if (timestamp > 0) {
                     msg.Set("timestamp", Napi::Number::New(env, static_cast<double>(timestamp)));
                 }

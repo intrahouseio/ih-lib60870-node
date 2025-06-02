@@ -31,7 +31,7 @@ A cross-platform Node.js native addon for the **IEC 60870-5 protocol suite**, en
 2. Install the package via npm:
 
    ```bash
-   npm install ih-lib60870-node
+   npm install ih-lib60870-node --ignore-scripts
    ```
 
 3. Prebuilt binaries will be automatically downloaded for your platform and architecture. If a prebuilt binary is unavailable, the addon will be compiled using `node-gyp`, requiring:
