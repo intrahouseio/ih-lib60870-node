@@ -41,11 +41,10 @@ private:
     bool running;
     bool started;
     //static thread_local std::string lastIpAddress;
-    std::map<IMasterConnection, int> clientConnections; // Map of client connections to client IDs
+    std::map<IMasterConnection, std::string> clientConnections; // Map of client connections to client IDs
     
    
-   // Хранилища для клиентских подключений    
-    std::map<IMasterConnection, std::string> clientIdStrMap;
+ 
     std::map<std::string, int> ipConnectionCounts;
 
     static bool ConnectionRequestHandler(void *parameter, const char *ipAddress);
