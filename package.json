@@ -21,11 +21,10 @@
     "builds/",
     "examples/"
   ],
-  "dependencies": {},
   "devDependencies": {
-    "prebuild": "12.1.0",
-    "node-gyp": "^10.1.0",
-    "node-addon-api": "^7.1.1"
+    "node-addon-api": "^7.1.1",
+    "node-gyp": "^10.0.0",
+    "prebuild": "^7.2.2"
   },
   "os": [
     "darwin",
