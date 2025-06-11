@@ -30,13 +30,11 @@ private:
     std::thread _thread;
     //std::atomic<bool> running;
     std::mutex connMutex; // Synchronize connection state changes
-    //bool started = false;
-    int serverId = 0;
+    //bool started = false;   
     std::string ipReserve;
     std::string serverID;
     std::map<int, CS101_ASDU> asduGroups; // Пока не используется, но добавлено для будущей группировки
-    int cnt = 0;
-    int asduAddress;     
+    int cnt = 0;   
     Napi::ThreadSafeFunction tsfn;
     bool running;
     bool started;

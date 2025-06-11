@@ -36,8 +36,7 @@ private:
     int cnt = 0;
     Napi::ThreadSafeFunction tsfn;
     int asduAddress = 1;
-     int originatorAddress;
-   bool usingPrimaryPort;
+     int originatorAddress;   
    std::map<int, bool> slaveStates; // Состояние каждого слейва (true = AVAILABLE, false = ERROR/IDLE)
     std::map<int, bool> slaveActivated; // Активировано ли соединение для слейва
 

@@ -248,7 +248,7 @@ Napi::Value IEC101Slave::Connect(const Napi::CallbackInfo& info) {
 
                     if (running && !connected) {
                         retryCount++;
-                        printf("Reconnection attempt %d/%d failed, retrying in %d seconds, clientID: %s, clientId: %i\n", retryCount, maxRetries, clientID.c_str(), clientId);
+                        printf("Reconnection attempt %d/%d failed, retrying in %s seconds, clientID: %s, clientId: %i\n", retryCount, maxRetries, clientID.c_str(), clientId);
                         tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
                             Napi::Object eventObj = Napi::Object::New(env);
                             eventObj.Set("clientID", Napi::String::New(env, clientID.c_str()));

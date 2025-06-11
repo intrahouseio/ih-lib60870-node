@@ -2327,8 +2327,7 @@ void IEC104Server::ConnectionEventHandler(void* parameter, IMasterConnection con
                 IMasterConnection_getPeerAddress(connection, ipBuffer, sizeof(ipBuffer)-1);
                 std::string ipPort = ipBuffer;
                 
-                server->ipConnectionCounts[ipPort]++;
-                int count = server->ipConnectionCounts[ipPort];
+                server->ipConnectionCounts[ipPort]++;                
                 clientIdStr = ipPort;
 
                 server->clientConnections[connection] = clientIdStr;
@@ -2734,7 +2733,7 @@ bool IEC104Server::RawMessageHandler(void* parameter, IMasterConnection connecti
     }*/
      for (const auto& [ioa, val, quality, timestamp, bselCmd, ql] : elements) {
             printf("ASDU type: %s, serverID: %s, clientId: %s, asduAddress: %d, ioa: %i, value: %f, quality: %u, timestamp: %" PRIu64 ", bselCmd: %d, ql: %d, cnt: %i\n",
-                   TypeID_toString(typeID), server->serverID.c_str(), clientIdStr, receivedAsduAddress, ioa, val, quality, timestamp, bselCmd, ql, server->cnt);
+                   TypeID_toString(typeID), server->serverID.c_str(), clientIdStr.c_str(), receivedAsduAddress, ioa, val, quality, timestamp, bselCmd, ql, server->cnt);
             fflush(stdout);
         }
 
@@ -2764,7 +2763,7 @@ bool IEC104Server::RawMessageHandler(void* parameter, IMasterConnection connecti
         return true;
     } catch (const std::exception& e) {
         printf("Exception in RawMessageHandler: %s, serverID: %s, clientId: %s, asduAddress: %d\n",
-               e.what(), server->serverID.c_str(), clientIdStr, receivedAsduAddress);
+               e.what(), server->serverID.c_str(), clientIdStr.c_str(), receivedAsduAddress);
         fflush(stdout);
         server->tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
             Napi::Object eventObj = Napi::Object::New(env);
