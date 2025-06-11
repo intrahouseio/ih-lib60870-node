@@ -6,7 +6,7 @@
   "scripts": {
     "configure": "node-gyp configure",
     "build": "node-gyp build",
-    "prebuild": "prebuild --target=20.19.0 --napi-versions 11",
+    "prebuild": "prebuild --target=20.19.2 --napi-versions 11",
     "prebuild-upload": "prebuild --upload-all"
   },
   "keywords": [
@@ -24,7 +24,7 @@
   "devDependencies": {
     "node-addon-api": "^7.1.1",
     "node-gyp": "^10.0.0",
-    "prebuild": "^7.2.2"
+    "prebuild": "^12.1.0"
   },
   "os": [
     "darwin",
