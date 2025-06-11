@@ -1309,7 +1309,7 @@ bool IEC104Server::RawMessageHandler(void* parameter, IMasterConnection connecti
         }
 
       for (const auto& [ioa, val, quality, timestamp, bselCmd, ql] : elements) {
-            printf("ASDU type: %s, serverID: %s, clientId: %s asduAddress: %d, ioa: %i, value: %f, quality: %u, timestamp: %" PRIu64 ", bselCmd: %d, ql: %d, cnt: %i\n",
+            printf("ASDU type: %s, serverID: %s, clientId: %s, asduAddress: %d, ioa: %i, value: %f, quality: %u, timestamp: %" PRIu64 ", bselCmd: %d, ql: %d, cnt: %i\n",
                    TypeID_toString(typeID), server->serverID.c_str(), clientIdStr.c_str(), receivedAsduAddress, ioa, val, quality, timestamp, bselCmd, ql, server->cnt);
             fflush(stdout);
         }
