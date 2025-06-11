@@ -1,12 +1,12 @@
 {
   "name": "ih-lib60870-node",
-  "version": "1.0.57",
+  "version": "1.0.56",
   "description": "Cross-platform Node.js native addon of the iec60870 support",
   "main": "index.js",
   "scripts": {
     "configure": "node-gyp configure",
     "build": "node-gyp build",
-    "prebuild": "prebuild --target=20.19.2 --napi-versions 11",
+    "prebuild": "prebuild --target=20.19.0 --napi-versions 11",
     "prebuild-upload": "prebuild --upload-all"
   },
   "keywords": [
@@ -21,10 +21,11 @@
     "builds/",
     "examples/"
   ],
+  "dependencies": {},
   "devDependencies": {
-    "node-addon-api": "^7.1.1",
-    "node-gyp": "^10.0.0",
-    "prebuild": "^12.1.0"
+    "prebuild": "12.1.0",
+    "node-gyp": "^10.1.0",
+    "node-addon-api": "^7.1.1"
   },
   "os": [
     "darwin",

@@ -1,3 +1,5 @@
+
+
 #ifdef _WIN32
 #include <windows.h>
 #else
@@ -1308,33 +1310,28 @@ bool IEC104Server::RawMessageHandler(void* parameter, IMasterConnection connecti
                 return false;
         }
 
-      for (const auto& [ioa, val, quality, timestamp, bselCmd, ql] : elements) {
-            printf("ASDU type: %s, serverID: %s, clientId: %s, asduAddress: %d, ioa: %i, value: %f, quality: %u, timestamp: %" PRIu64 ", bselCmd: %d, ql: %d, cnt: %i\n",
-                   TypeID_toString(typeID), server->serverID.c_str(), clientIdStr.c_str(), receivedAsduAddress, ioa, val, quality, timestamp, bselCmd, ql, server->cnt);
-            fflush(stdout);
-        }
+      server->tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
+            Napi::Object msgObj = Napi::Object::New(env);
+            msgObj.Set("serverID", Napi::String::New(env, server->serverID));
+            msgObj.Set("type", Napi::String::New(env, "data"));
+            msgObj.Set("typeId", Napi::Number::New(env, typeID));
+            msgObj.Set("clientId", Napi::String::New(env, clientIdStr));            
+            msgObj.Set("asduAddress", Napi::Number::New(env, receivedAsduAddress));
 
-        server->tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
-            Napi::Array jsArray = Napi::Array::New(env, elements.size());
+            Napi::Array ioArray = Napi::Array::New(env, elements.size());
             for (size_t i = 0; i < elements.size(); i++) {
-                const auto& [ioa, val, quality, timestamp, bselCmd, ql] = elements[i];
-                Napi::Object msg = Napi::Object::New(env);
-                msg.Set("serverID", Napi::String::New(env, server->serverID));
-                msg.Set("clientId", Napi::String::New(env, clientIdStr));           
-                msg.Set("typeId", Napi::Number::New(env, typeID));
-                msg.Set("asduAddress", Napi::Number::New(env, receivedAsduAddress));
-                msg.Set("ioa", Napi::Number::New(env, ioa));
-                msg.Set("val", Napi::Number::New(env, val));
-                msg.Set("quality", Napi::Number::New(env, quality));
-                msg.Set("bselCmd", Napi::Boolean::New(env, bselCmd));
-                msg.Set("ql", Napi::Number::New(env, ql));
-                if (timestamp > 0) {
-                    msg.Set("timestamp", Napi::Number::New(env, static_cast<double>(timestamp)));
-                }
-                jsArray[i] = msg;
+                Napi::Object ioObj = Napi::Object::New(env);
+                ioObj.Set("ioa", Napi::Number::New(env, std::get<0>(elements[i])));
+                ioObj.Set("value", Napi::Number::New(env, std::get<1>(elements[i])));
+                ioObj.Set("quality", Napi::Number::New(env, std::get<2>(elements[i])));
+                ioObj.Set("timestamp", Napi::Number::New(env, static_cast<double>(std::get<3>(elements[i]))));
+                ioObj.Set("bselCmd", Napi::Boolean::New(env, std::get<4>(elements[i])));
+                ioObj.Set("ql", Napi::Number::New(env, std::get<5>(elements[i])));
+                ioArray[i] = ioObj;
             }
-            jsCallback.Call({Napi::String::New(env, "data"), jsArray});
-            server->cnt++;
+            msgObj.Set("elements", ioArray);
+
+            jsCallback.Call({Napi::String::New(env, "data"), msgObj});
         });
 
         return true;
@@ -1345,7 +1342,7 @@ bool IEC104Server::RawMessageHandler(void* parameter, IMasterConnection connecti
         server->tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
             Napi::Object eventObj = Napi::Object::New(env);
             eventObj.Set("serverID", Napi::String::New(env, server->serverID));
-            eventObj.Set("clientId", Napi::String::New(env, clientIdStr));
+            eventObj.Set("clientId", Napi::String::New(env, clientIdStr));     
             eventObj.Set("type", Napi::String::New(env, "error"));
             eventObj.Set("reason", Napi::String::New(env, string("Обработка ASDU не удалась: ") + e.what()));
             jsCallback.Call({Napi::String::New(env, "data"), eventObj});

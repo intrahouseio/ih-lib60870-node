@@ -47,7 +47,7 @@ private:
     std::string clientID;
     int cnt = 0;
     ThreadSafeFunction tsfn;
-    int asduAddress =   1; // Поле класса для хранения адреса ASDU
+    int asduAddress = 1; // Поле класса для хранения адреса ASDU
 
     static bool RawMessageHandler(void *parameter, int address, CS101_ASDU asdu);
     static void LinkLayerStateChanged(void *parameter, int address, LinkLayerState state);

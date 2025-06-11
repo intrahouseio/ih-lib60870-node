@@ -770,7 +770,7 @@ Napi::Value IEC104Client::SendCommands(const Napi::CallbackInfo& info) {
                         CS101_ASDU_addPayload(asdu, payload, sizeof(payload));
                         printf("F_SC_NA_1 ASDU: TypeID=%d, COT=%d, OA=%d, ASDUAddr=%d, NumIx=%d, Payload: ", 
                             CS101_ASDU_getTypeID(asdu), cot, 0, asduAddress, CS101_ASDU_getNumberOfElements(asdu));
-                        for (size_t i = 0; i < sizeof(payload); i++) {
+                        for (int i = 0; i < sizeof(payload); i++) {
                             printf("%02x ", payload[i]);
                         }
                         printf("\n");
@@ -1387,7 +1387,7 @@ void IEC104Client::ConnectionHandler(void* parameter, CS104_Connection con, CS10
         offset += 8; // Пропускаем 8 байт
 
         // Преобразуем в Unix timestamp
-        struct tm timeinfo = {};
+        struct tm timeinfo = {0};
         timeinfo.tm_year = year + 2000 - 1900; // Год с 1900
         timeinfo.tm_mon = month - 1; // Месяц 0-11
         timeinfo.tm_mday = day;
