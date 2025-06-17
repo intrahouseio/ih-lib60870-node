@@ -39,11 +39,12 @@ private:
     bool running;
     bool started;
     //static thread_local std::string lastIpAddress;
-    std::map<IMasterConnection, std::string> clientConnections; // Map of client connections to client IDs
-    
-   
- 
+    std::map<IMasterConnection, std::string> clientConnections; // Map of client connections to client IDs   
     std::map<std::string, int> ipConnectionCounts;
+    std::map<std::string, CS104_RedundancyGroup> redundancyGroups;
+
+    bool restrictIPs; // Флаг для ограничения IP-адресов
+    CS104_ServerMode serverMode; // Режим сервера
 
     static bool ConnectionRequestHandler(void *parameter, const char *ipAddress);
     static void ConnectionEventHandler(void *parameter, IMasterConnection connection, CS104_PeerConnectionEvent event);

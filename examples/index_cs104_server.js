@@ -168,12 +168,14 @@ const server = new IEC104Server((event, data) => {
 // Server parameters
 const port = 2404;
 const serverID = "server1";
+const mode = "redundant";
+const clients = [];
 
 // Starting the server
 console.log(`Starting IEC 104 Server on port ${port} with serverID: ${serverID}`);
 server.start({
     port: port,
-    serverID: serverID,
+    serverID: serverID,    
     ipReserve: "127.0.0.1",
     params: {
         originatorAddress: 1,

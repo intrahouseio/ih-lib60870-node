@@ -4,14 +4,19 @@
 #include <unistd.h>
 #endif
 
-#include "cs104_server.h"
-#include <inttypes.h>
-#include <stdexcept>
-#include <vector>
+#include <string>
 #include <map>
+#include <mutex>
+#include <thread>
+#include <vector>
+#include <tuple>
+#include <napi.h>
+#include <stdexcept>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <inttypes.h> // Для PRIu64
+#include "cs104_server.h"
 
 using namespace Napi;
 using namespace std;
@@ -41,7 +46,10 @@ IEC104Server::IEC104Server(const Napi::CallbackInfo& info) : Napi::ObjectWrap<IE
     Napi::Function emit = info[0].As<Napi::Function>();
     running = false;
     started = false;
+    server = nullptr; // Explicitly initialize
     cnt = 0;
+    restrictIPs = false;
+    serverMode = CS104_MODE_CONNECTION_IS_REDUNDANCY_GROUP;
 
     try {
         tsfn = Napi::ThreadSafeFunction::New(
@@ -50,7 +58,10 @@ IEC104Server::IEC104Server(const Napi::CallbackInfo& info) : Napi::ObjectWrap<IE
             "IEC104ServerTSFN",
             0,
             1,
-            [](Napi::Env) {}
+            [this](Napi::Env) {
+                printf("ThreadSafeFunction finalized, serverID: %s\n", serverID.c_str());
+                fflush(stdout);
+            }
         );
     } catch (const std::exception& e) {
         printf("Failed to create ThreadSafeFunction: %s\n", e.what());
@@ -60,51 +71,71 @@ IEC104Server::IEC104Server(const Napi::CallbackInfo& info) : Napi::ObjectWrap<IE
 }
 
 IEC104Server::~IEC104Server() {
-    std::lock_guard<std::mutex> lock(connMutex);
-    if (running) {
-        running = false;
-        if (started) {
-            printf("Destructor stopping server, serverID: %s\n", serverID.c_str());
-            fflush(stdout);
-            CS104_Slave_stop(server);
-            CS104_Slave_destroy(server);
-            started = false;
+    // Ensure server is stopped and thread is joined
+    {
+        std::lock_guard<std::mutex> lock(connMutex);
+        if (running) {
+            running = false;
+            if (started && server) {
+                printf("Destructor stopping server, serverID: %s\n", serverID.c_str());
+                fflush(stdout);
+                CS104_Slave_stop(server);
+                CS104_Slave_destroy(server);
+                server = nullptr;
+                started = false;
+            }
         }
-        if (_thread.joinable()) {
-            _thread.join();
-        }
-        tsfn.Release();
     }
+
+    if (_thread.joinable()) {
+        _thread.join();
+    }
+
+    // Clean up redundancy groups
+    for (auto& [name, group] : redundancyGroups) {
+        if (group) {
+            CS104_RedundancyGroup_destroy(group);
+            group = nullptr;
+        }
+    }
+    redundancyGroups.clear();
+
+    // Release thread-safe function
+    tsfn.Release();
 }
 
 Napi::Value IEC104Server::Start(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
 
     if (info.Length() < 1 || !info[0].IsObject()) {
-        Napi::TypeError::New(env, "Expected an object with { port (number), serverID (string), [ipReserve (string), params (object)] }").ThrowAsJavaScriptException();
+        Napi::TypeError::New(env, "Expected an object with { port (number), serverID (string), mode (string), [params (object), clients (array)] }").ThrowAsJavaScriptException();
         return env.Undefined();
     }
 
     Napi::Object config = info[0].As<Napi::Object>();
 
     if (!config.Has("port") || !config.Get("port").IsNumber() ||
-        !config.Has("serverID") || !config.Get("serverID").IsString()) {
-        Napi::TypeError::New(env, "Object must contain 'port' (number) and 'serverID' (string)").ThrowAsJavaScriptException();
+        !config.Has("serverID") || !config.Get("serverID").IsString() ||
+        !config.Has("mode") || !config.Get("mode").IsString()) {
+        Napi::TypeError::New(env, "Object must contain 'port' (number), 'serverID' (string), and 'mode' (string)").ThrowAsJavaScriptException();
         return env.Undefined();
     }
 
     int port = config.Get("port").As<Napi::Number>().Int32Value();
     serverID = config.Get("serverID").As<Napi::String>().Utf8Value();
+    std::string mode = config.Get("mode").As<Napi::String>().Utf8Value();
 
     if (port <= 0 || serverID.empty()) {
         Napi::Error::New(env, "Invalid 'port' or 'serverID'").ThrowAsJavaScriptException();
         return env.Undefined();
     }
 
-    std::string ipReserve = "";
-    if (config.Has("ipReserve") && config.Get("ipReserve").IsString()) {
-        ipReserve = config.Get("ipReserve").As<Napi::String>().Utf8Value();
+    if (mode != "redundant" && mode != "multi") {
+        Napi::Error::New(env, "Mode must be 'redundant' or 'multi'").ThrowAsJavaScriptException();
+        return env.Undefined();
     }
+
+    serverMode = (mode == "redundant") ? CS104_MODE_MULTIPLE_REDUNDANCY_GROUPS : CS104_MODE_CONNECTION_IS_REDUNDANCY_GROUP; // Исправлено
 
     {
         std::lock_guard<std::mutex> lock(connMutex);
@@ -134,22 +165,15 @@ Napi::Value IEC104Server::Start(const Napi::CallbackInfo& info) {
         if (params.Has("t3")) t3 = params.Get("t3").As<Napi::Number>().Int32Value();
         if (params.Has("maxClients")) maxClients = params.Get("maxClients").As<Napi::Number>().Int32Value();
 
-        if (originatorAddress < 0 || originatorAddress > 255) {
-            Napi::Error::New(env, "originatorAddress must be 0-255").ThrowAsJavaScriptException();
-            return env.Undefined();
-        }
-        if (k <= 0 || w <= 0 || t0 <= 0 || t1 <= 0 || t2 <= 0 || t3 <= 0) {
-            Napi::Error::New(env, "k, w, t0, t1, t2, t3 must be positive").ThrowAsJavaScriptException();
-            return env.Undefined();
-        }
-        if (maxClients <= 0) {
-            Napi::Error::New(env, "maxClients must be positive").ThrowAsJavaScriptException();
+        if (originatorAddress < 0 || originatorAddress > 255 ||
+            k <= 0 || w <= 0 || t0 <= 0 || t1 <= 0 || t2 <= 0 || t3 <= 0 || maxClients <= 0) {
+            Napi::Error::New(env, "Invalid parameters").ThrowAsJavaScriptException();
             return env.Undefined();
         }
     }
 
     try {
-        printf("Creating server on port %d, serverID: %s, ipReserve: %s\n", port, serverID.c_str(), ipReserve.c_str());
+        printf("Creating server on port %d, serverID: %s, mode: %s\n", port, serverID.c_str(), mode.c_str());
         fflush(stdout);
         server = CS104_Slave_create(maxClients, maxClients);
         if (!server) {
@@ -176,12 +200,42 @@ Napi::Value IEC104Server::Start(const Napi::CallbackInfo& info) {
         apciParams->t2 = t2;
         apciParams->t3 = t3;
 
-        CS104_Slave_setServerMode(server, CS104_MODE_MULTIPLE_REDUNDANCY_GROUPS);
+        CS104_Slave_setServerMode(server, serverMode);
 
-        this->ipReserve = ipReserve;
+        // Настройка групп резервирования для режима redundant
+        if (serverMode == CS104_MODE_MULTIPLE_REDUNDANCY_GROUPS) { // Исправлено
+            if (config.Has("clients") && config.Get("clients").IsArray()) {
+                restrictIPs = true;
+                Napi::Array clients = config.Get("clients").As<Napi::Array>();
+                for (uint32_t i = 0; i < clients.Length(); i++) {
+                    Napi::Value clientVal = clients[i];
+                    if (!clientVal.IsObject()) continue;
+                    Napi::Object client = clientVal.As<Napi::Object>(); // Исправлено
+                    if (client.Has("ip") && client.Has("group")) {
+                        std::string ip = client.Get("ip").As<Napi::String>().Utf8Value();
+                        std::string group = client.Get("group").As<Napi::String>().Utf8Value();
+                        if (redundancyGroups.find(group) == redundancyGroups.end()) {
+                            redundancyGroups[group] = CS104_RedundancyGroup_create(group.c_str());
+                            CS104_Slave_addRedundancyGroup(server, redundancyGroups[group]);
+                        }
+                        CS104_RedundancyGroup_addAllowedClient(redundancyGroups[group], ip.c_str());
+                        printf("Added client %s to redundancy group %s\n", ip.c_str(), group.c_str());
+                        fflush(stdout);
+                    }
+                }
+            } else {
+                // Создаем группу по умолчанию без ограничений IP
+                restrictIPs = false;
+                std::string defaultGroup = "DefaultGroup";
+                redundancyGroups[defaultGroup] = CS104_RedundancyGroup_create(defaultGroup.c_str());
+                CS104_Slave_addRedundancyGroup(server, redundancyGroups[defaultGroup]);
+                printf("Created default redundancy group: %s (no IP restrictions)\n", defaultGroup.c_str());
+                fflush(stdout);
+            }
+        }
 
-        printf("Starting server with params: originatorAddress=%d, k=%d, w=%d, t0=%d, t1=%d, t2=%d, t3=%d, maxClients=%d, serverID: %s\n",
-               originatorAddress, k, w, t0, t1, t2, t3, maxClients, serverID.c_str());
+        printf("Starting server with params: originatorAddress=%d, k=%d, w=%d, t0=%d, t1=%d, t2=%d, t3=%d, maxClients=%d, serverID: %s, mode: %s\n",
+               originatorAddress, k, w, t0, t1, t2, t3, maxClients, serverID.c_str(), mode.c_str());
         fflush(stdout);
 
         running = true;
@@ -194,25 +248,144 @@ Napi::Value IEC104Server::Start(const Napi::CallbackInfo& info) {
             printf("Server started, serverID: %s\n", serverID.c_str());
             fflush(stdout);
 
-            while (running) {
+         while (running) {
                 Thread_sleep(100);
             }
 
-            std::lock_guard<std::mutex> lock(connMutex);
-            CS104_Slave_stop(server);
-            CS104_Slave_destroy(server);
-            started = false;
-            printf("Server stopped, serverID: %s\n", serverID.c_str());
-            fflush(stdout);
+            // Thread cleanup: only stop server, do not destroy
+            {
+                std::lock_guard<std::mutex> lock(connMutex);
+                if (started && server) {
+                    CS104_Slave_stop(server);
+                    started = false;
+                    printf("Server stopped by thread, serverID: %s\n", serverID.c_str());
+                    fflush(stdout);
+                }
+            }
         });
 
         return env.Undefined();
     } catch (const std::exception& e) {
+        if (server) {
+            CS104_Slave_destroy(server);
+            server = nullptr;
+        }
         printf("Exception in Start: %s, serverID: %s\n", e.what(), serverID.c_str());
         fflush(stdout);
         Napi::Error::New(env, string("Start failed: ") + e.what()).ThrowAsJavaScriptException();
         return env.Undefined();
     }
+}
+
+bool IEC104Server::ConnectionRequestHandler(void* parameter, const char* ipAddress) {
+    IEC104Server* server = static_cast<IEC104Server*>(parameter);
+    printf("Connection request from %s, serverID: %s\n", ipAddress, server->serverID.c_str());
+    fflush(stdout);
+
+    if (server->serverMode == CS104_MODE_CONNECTION_IS_REDUNDANCY_GROUP) { // Исправлено
+        // В режиме multi разрешаем все подключения
+       printf("Connection allowed (multi mode), IP: %s, serverID: %s\n", ipAddress, server->serverID.c_str());
+        fflush(stdout);
+        return true;
+    }
+
+    // В режиме redundant проверяем IP, если ограничения заданы
+    if (server->restrictIPs) {
+        printf("Connection request for IP %s, validated by redundancy groups, serverID: %s\n", ipAddress, server->serverID.c_str());
+            fflush(stdout);
+            return true; // lib60870 will reject invalid IPs
+        } else {
+            printf("IP %s added to DefaultGroup (no restrictions), serverID: %s\n", ipAddress, server->serverID.c_str());
+            fflush(stdout);
+            if (server->redundancyGroups.find("DefaultGroup") != server->redundancyGroups.end()) {
+                CS104_RedundancyGroup_addAllowedClient(server->redundancyGroups["DefaultGroup"], ipAddress);
+            }
+            return true;
+        }
+}
+
+static CS101_ASDU createStopDTASDU(CS101_AppLayerParameters alParams) {
+    // Create an ASDU with Cause of Transmission = ACTIVATION_TERMINATION (STOPDT)
+    CS101_ASDU asdu = CS101_ASDU_create(alParams, false, CS101_COT_ACTIVATION_TERMINATION, 0, 0, false, false);
+    // No additional information objects are typically needed for STOPDT
+    return asdu;
+}
+
+void IEC104Server::ConnectionEventHandler(void* parameter, IMasterConnection connection, CS104_PeerConnectionEvent event) {
+    IEC104Server* server = static_cast<IEC104Server*>(parameter);
+    std::string eventStr;
+    std::string reason;
+    std::string clientIdStr;
+
+    {
+        std::lock_guard<std::mutex> lock(server->connMutex);
+        switch (event) {
+            case CS104_CON_EVENT_CONNECTION_OPENED: {
+                char ipBuffer[256] = {0};
+                IMasterConnection_getPeerAddress(connection, ipBuffer, sizeof(ipBuffer)-1);
+                std::string ipPort = ipBuffer;
+                
+                server->ipConnectionCounts[ipPort]++;
+                clientIdStr = ipPort;
+
+                server->clientConnections[connection] = clientIdStr;
+
+                eventStr = "connected";
+                reason = "client connected";
+                break;
+            }
+            case CS104_CON_EVENT_CONNECTION_CLOSED: {
+                eventStr = "disconnected";
+                reason = "client disconnected";
+                if (server->clientConnections.find(connection) != server->clientConnections.end()) {
+                    clientIdStr = server->clientConnections[connection];
+                    server->clientConnections.erase(connection);
+                    server->ipConnectionCounts[clientIdStr]--;
+                    if (server->ipConnectionCounts[clientIdStr] <= 0) {
+                        server->ipConnectionCounts.erase(clientIdStr);
+                    }
+                }
+                break;
+            }
+            case CS104_CON_EVENT_ACTIVATED: {
+                eventStr = "activated";
+                reason = "STARTDT confirmed";
+                if (server->clientConnections.find(connection) != server->clientConnections.end()) {
+                    clientIdStr = server->clientConnections[connection];
+                }
+                break;
+            }
+            case CS104_CON_EVENT_DEACTIVATED: {
+                eventStr = "deactivated";
+                reason = "STOPDT confirmed";
+                if (server->clientConnections.find(connection) != server->clientConnections.end()) {
+                    clientIdStr = server->clientConnections[connection];
+                    // Send STOPDT ASDU in redundant mode
+                    if (server->serverMode == CS104_MODE_MULTIPLE_REDUNDANCY_GROUPS) {
+                        CS101_AppLayerParameters alParams = CS104_Slave_getAppLayerParameters(server->server); // Fix: Use server->server
+                        CS101_ASDU stopdtAsdu = createStopDTASDU(alParams);
+                        IMasterConnection_sendASDU(connection, stopdtAsdu);
+                        CS101_ASDU_destroy(stopdtAsdu);
+                    }
+                }
+                break;
+            }
+        }
+    }
+
+    printf("Connection event: %s, clientId: %s, reason: %s, serverID: %s\n",
+           eventStr.c_str(), clientIdStr.c_str(), reason.c_str(), server->serverID.c_str());
+    fflush(stdout);
+
+    server->tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
+        Napi::Object eventObj = Napi::Object::New(env);
+        eventObj.Set("serverID", Napi::String::New(env, server->serverID));
+        eventObj.Set("type", Napi::String::New(env, "control"));
+        eventObj.Set("event", Napi::String::New(env, eventStr));
+        eventObj.Set("reason", Napi::String::New(env, reason));
+        eventObj.Set("clientId", Napi::String::New(env, clientIdStr));        
+        jsCallback.Call({Napi::String::New(env, "data"), eventObj});
+    });
 }
 
 Napi::Value IEC104Server::Stop(const Napi::CallbackInfo& info) {
@@ -221,11 +394,12 @@ Napi::Value IEC104Server::Stop(const Napi::CallbackInfo& info) {
         std::lock_guard<std::mutex> lock(connMutex);
         if (running) {
             running = false;
-            if (started) {
+            if (started && server) {
                 printf("Stop called, stopping server, serverID: %s\n", serverID.c_str());
                 fflush(stdout);
                 CS104_Slave_stop(server);
                 CS104_Slave_destroy(server);
+                server = nullptr;
                 started = false;
             }
         }
@@ -235,16 +409,29 @@ Napi::Value IEC104Server::Stop(const Napi::CallbackInfo& info) {
         _thread.join();
     }
 
-    std::lock_guard<std::mutex> lock(connMutex);
-    tsfn.Release();
+    // Clear redundancy groups
+    for (auto& [name, group] : redundancyGroups) {
+        if (group) {
+            CS104_RedundancyGroup_destroy(group);
+            group = nullptr;
+        }
+    }
+    redundancyGroups.clear();
+
+    // Clear client connections
+    {
+        std::lock_guard<std::mutex> lock(connMutex);
+        clientConnections.clear();
+        ipConnectionCounts.clear();
+    }
 
     return env.Undefined();
 }
 
 Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
-   Napi::Env env = info.Env();
+    Napi::Env env = info.Env();
 
-    if (info.Length() < 2  || !info[0].IsString() || !info[1].IsArray()) {
+    if (info.Length() < 2 || !info[0].IsString() || !info[1].IsArray()) {
         Napi::TypeError::New(env, "Expected clientId (string), commands (array of objects with 'typeId', 'ioa', 'value', 'asduAddress' and optional fields)").ThrowAsJavaScriptException();
         return env.Undefined();
     }
@@ -275,7 +462,6 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
 
     try {
         bool allSuccess = true;
-        bool useReserve = false;
 
         for (uint32_t i = 0; i < commands.Length(); i++) {
             Napi::Value item = commands[i];
@@ -319,13 +505,12 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
             if (cmdObj.Has("quality") && cmdObj.Get("quality").IsNumber()) {
                 quality = cmdObj.Get("quality").As<Napi::Number>().Uint32Value();
             }
-            
 
             CS101_ASDU asdu = CS101_ASDU_create(alParams, false, (CS101_CauseOfTransmission)cot, 0, asduAddress, false, false);
 
             bool success = false;
             switch (typeId) {
-               case M_SP_NA_1: {
+                case M_SP_NA_1: {
                     if (!cmdObj.Get("value").IsBoolean()) {
                         Napi::TypeError::New(env, "M_SP_NA_1 requires 'value' as boolean").ThrowAsJavaScriptException();
                         CS101_ASDU_destroy(asdu);
@@ -387,7 +572,7 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     BitString32_destroy(bo);
                     break;
                 }
-               case M_ME_NA_1: {
+                case M_ME_NA_1: {
                     if (!cmdObj.Get("value").IsNumber()) {
                         Napi::TypeError::New(env, "M_ME_NA_1 requires 'value' as number (-1.0 to 1.0)").ThrowAsJavaScriptException();
                         CS101_ASDU_destroy(asdu);
@@ -564,7 +749,7 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                         CS101_ASDU_destroy(asdu);
                         return env.Undefined();
                     }
-                   double doubleValue = cmdObj.Get("value").As<Napi::Number>().DoubleValue();                  
+                    double doubleValue = cmdObj.Get("value").As<Napi::Number>().DoubleValue();                  
                     float value = static_cast<float>(doubleValue);
                     uint64_t timestamp = cmdObj.Get("timestamp").As<Napi::Number>().Int64Value();
                     MeasuredValueShortWithCP56Time2a mc = MeasuredValueShortWithCP56Time2a_create(NULL, ioa, value, quality, CP56Time2a_createFromMsTimestamp(NULL, timestamp));
@@ -870,16 +1055,6 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     continue;
             }
 
-           if (!success && !ipReserve.empty() && !useReserve) {
-                printf("Failed to send command on primary IP, switching to reserve IP: %s, serverID: %s, clientId: %s\n", ipReserve.c_str(), serverID.c_str(), clientIdStr.c_str());
-                fflush(stdout);
-                useReserve = true;
-                CS104_Slave_setLocalAddress(server, ipReserve.c_str());
-                CS104_Slave_stop(server);
-                CS104_Slave_start(server);
-                success = IMasterConnection_sendASDU(targetConnection, asdu);
-            }
-
             CS101_ASDU_destroy(asdu);
 
             if (!success) {
@@ -908,7 +1083,8 @@ Napi::Value IEC104Server::GetStatus(const Napi::CallbackInfo& info) {
     Napi::Object status = Napi::Object::New(env);
     status.Set("started", Napi::Boolean::New(env, started));
     status.Set("serverID", Napi::String::New(env, serverID));
-    status.Set("ipReserve", Napi::String::New(env, ipReserve));
+    status.Set("mode", Napi::String::New(env, serverMode == CS104_MODE_MULTIPLE_REDUNDANCY_GROUPS ? "redundant" : "multi"));
+    status.Set("restrictIPs", Napi::Boolean::New(env, restrictIPs));
 
     Napi::Array clients = Napi::Array::New(env, clientConnections.size());
     int index = 0;
@@ -918,76 +1094,6 @@ Napi::Value IEC104Server::GetStatus(const Napi::CallbackInfo& info) {
     status.Set("connectedClients", clients);
 
     return status;
-}
-
-bool IEC104Server::ConnectionRequestHandler(void* parameter, const char* ipAddress) {
-    IEC104Server* server = static_cast<IEC104Server*>(parameter);
-    printf("Connection request from %s, serverID: %s\n", ipAddress, server->serverID.c_str());
-    fflush(stdout);
-    return true; // Accept all connections
-}
-
-
-void IEC104Server::ConnectionEventHandler(void* parameter, IMasterConnection connection, CS104_PeerConnectionEvent event) {
-    IEC104Server* server = static_cast<IEC104Server*>(parameter);
-    std::string eventStr;
-    std::string reason;
-    std::string clientIdStr;
-
-    {
-        std::lock_guard<std::mutex> lock(server->connMutex);
-        switch (event) {
-            case CS104_CON_EVENT_CONNECTION_OPENED: {
-                char ipBuffer[256] = {0};
-                IMasterConnection_getPeerAddress(connection, ipBuffer, sizeof(ipBuffer)-1);
-                std::string ipPort = ipBuffer;
-                
-                server->ipConnectionCounts[ipPort]++;                
-                clientIdStr = ipPort;
-
-                server->clientConnections[connection] = clientIdStr;
-
-                eventStr = "connected";
-                reason = "client connected";
-                break;
-            }
-            case CS104_CON_EVENT_CONNECTION_CLOSED: {
-                eventStr = "disconnected";
-                reason = "client disconnected";
-                if (server->clientConnections.find(connection) != server->clientConnections.end()) {
-                    clientIdStr = server->clientConnections[connection];
-                    server->clientConnections.erase(connection);
-                }
-                break;
-            }
-            case CS104_CON_EVENT_ACTIVATED: {
-                eventStr = "activated";
-                reason = "STARTDT confirmed";
-                if (server->clientConnections.find(connection) != server->clientConnections.end()) {
-                    clientIdStr = server->clientConnections[connection];
-                }
-                break;
-            }
-            case CS104_CON_EVENT_DEACTIVATED: {
-                eventStr = "deactivated";
-                reason = "STOPDT confirmed";
-                if (server->clientConnections.find(connection) != server->clientConnections.end()) {
-                    clientIdStr = server->clientConnections[connection];
-                }
-                break;
-            }
-        }
-    }
-
-    server->tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
-        Napi::Object eventObj = Napi::Object::New(env);
-        eventObj.Set("serverID", Napi::String::New(env, server->serverID));
-        eventObj.Set("type", Napi::String::New(env, "control"));
-        eventObj.Set("event", Napi::String::New(env, eventStr));
-        eventObj.Set("reason", Napi::String::New(env, reason));
-        eventObj.Set("clientId", Napi::String::New(env, clientIdStr));        
-        jsCallback.Call({Napi::String::New(env, "data"), eventObj});
-    });
 }
 
 bool IEC104Server::RawMessageHandler(void* parameter, IMasterConnection connection, CS101_ASDU asdu) {

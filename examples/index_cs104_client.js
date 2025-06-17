@@ -324,7 +324,7 @@ async function main() {
     const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
     client.connect({
-        ip: "192.168.0.102",
+        ip: "127.0.0.1",
         port: 2404,
         clientID: "client1",
         ipReserve: "192.168.0.11",
