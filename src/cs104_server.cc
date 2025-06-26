@@ -311,7 +311,7 @@ static CS101_ASDU createStopDTASDU(CS101_AppLayerParameters alParams) {
     return asdu;
 }
 
- void IEC104Server::ConnectionEventHandler(void* parameter, IMasterConnection connection, CS104_PeerConnectionEvent event) {
+void IEC104Server::ConnectionEventHandler(void* parameter, IMasterConnection connection, CS104_PeerConnectionEvent event) {
     IEC104Server* server = static_cast<IEC104Server*>(parameter);
     std::string eventStr;
     std::string reason;
@@ -324,12 +324,10 @@ static CS101_ASDU createStopDTASDU(CS101_AppLayerParameters alParams) {
                 char ipBuffer[256] = {0};
                 IMasterConnection_getPeerAddress(connection, ipBuffer, sizeof(ipBuffer)-1);
                 std::string ipPort = ipBuffer;
-                // Extract IP address without port
-                size_t colonPos = ipPort.find(':');
-                std::string ipAddr = (colonPos != std::string::npos) ? ipPort.substr(0, colonPos) : ipPort;
-                clientIdStr = ipAddr;
+                
+                server->ipConnectionCounts[ipPort]++;
+                clientIdStr = ipPort;
 
-                server->ipConnectionCounts[clientIdStr]++;
                 server->clientConnections[connection] = clientIdStr;
 
                 eventStr = "connected";
@@ -364,7 +362,7 @@ static CS101_ASDU createStopDTASDU(CS101_AppLayerParameters alParams) {
                     clientIdStr = server->clientConnections[connection];
                     // Send STOPDT ASDU in redundant mode
                     if (server->serverMode == CS104_MODE_MULTIPLE_REDUNDANCY_GROUPS) {
-                        CS101_AppLayerParameters alParams = CS104_Slave_getAppLayerParameters(server->server);
+                        CS101_AppLayerParameters alParams = CS104_Slave_getAppLayerParameters(server->server); // Fix: Use server->server
                         CS101_ASDU stopdtAsdu = createStopDTASDU(alParams);
                         IMasterConnection_sendASDU(connection, stopdtAsdu);
                         CS101_ASDU_destroy(stopdtAsdu);
@@ -461,38 +459,26 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
     }
 
     CS101_AppLayerParameters alParams = CS104_Slave_getAppLayerParameters(server);
-    CS101_ASDU asdu = nullptr; // Declare asdu outside try block
 
     try {
         bool allSuccess = true;
-
-        // Create a single ASDU for all commands
-        asdu = CS101_ASDU_create(alParams, false, CS101_COT_SPONTANEOUS, 0, 0, false, false);
-        if (!asdu) {
-            throw std::runtime_error("Failed to create ASDU");
-        }
 
         for (uint32_t i = 0; i < commands.Length(); i++) {
             Napi::Value item = commands[i];
             if (!item.IsObject()) {
                 Napi::TypeError::New(env, "Each command must be an object").ThrowAsJavaScriptException();
-                CS101_ASDU_destroy(asdu);
                 return env.Undefined();
             }
 
             Napi::Object cmdObj = item.As<Napi::Object>();
             if (!cmdObj.Has("typeId") || !cmdObj.Has("ioa") || !cmdObj.Has("value") || !cmdObj.Has("asduAddress")) {
                 Napi::TypeError::New(env, "Each command must have 'typeId' (number), 'ioa' (number), 'value', and 'asduAddress' (number)").ThrowAsJavaScriptException();
-                CS101_ASDU_destroy(asdu);
                 return env.Undefined();
             }
 
             int typeId = cmdObj.Get("typeId").As<Napi::Number>().Int32Value();
             int ioa = cmdObj.Get("ioa").As<Napi::Number>().Int32Value();
             int asduAddress = cmdObj.Get("asduAddress").As<Napi::Number>().Int32Value();
-
-            // Update the ASDU's CA (Common Address) for each command
-            CS101_ASDU_setCA(asdu, asduAddress);
 
             bool bselCmd = false;
             int ql = 0;
@@ -506,7 +492,6 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                 ql = cmdObj.Get("ql").As<Napi::Number>().Int32Value();
                 if (ql < 0 || ql > 31) {
                     Napi::RangeError::New(env, "ql must be between 0 and 31").ThrowAsJavaScriptException();
-                    CS101_ASDU_destroy(asdu);
                     return env.Undefined();
                 }
             }
@@ -514,14 +499,14 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                 cot = cmdObj.Get("cot").As<Napi::Number>().Int32Value();
                 if (cot < 0 || cot > 63) {
                     Napi::RangeError::New(env, "cot must be between 0 and 63").ThrowAsJavaScriptException();
-                    CS101_ASDU_destroy(asdu);
                     return env.Undefined();
                 }
-                CS101_ASDU_setCOT(asdu, (CS101_CauseOfTransmission)cot);
             }
             if (cmdObj.Has("quality") && cmdObj.Get("quality").IsNumber()) {
                 quality = cmdObj.Get("quality").As<Napi::Number>().Uint32Value();
             }
+
+            CS101_ASDU asdu = CS101_ASDU_create(alParams, false, (CS101_CauseOfTransmission)cot, 0, asduAddress, false, false);
 
             bool success = false;
             switch (typeId) {
@@ -534,7 +519,7 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     bool value = cmdObj.Get("value").As<Napi::Boolean>();
                     SinglePointInformation sp = SinglePointInformation_create(NULL, ioa, value, quality);
                     CS101_ASDU_addInformationObject(asdu, (InformationObject)sp);
-                    success = true;
+                    success = IMasterConnection_sendASDU(targetConnection, asdu);
                     SinglePointInformation_destroy(sp);
                     break;
                 }
@@ -552,7 +537,7 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     }
                     DoublePointInformation dp = DoublePointInformation_create(NULL, ioa, (DoublePointValue)value, quality);
                     CS101_ASDU_addInformationObject(asdu, (InformationObject)dp);
-                    success = true;
+                    success = IMasterConnection_sendASDU(targetConnection, asdu);
                     DoublePointInformation_destroy(dp);
                     break;
                 }
@@ -570,7 +555,7 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     }
                     StepPositionInformation st = StepPositionInformation_create(NULL, ioa, value, false, quality);
                     CS101_ASDU_addInformationObject(asdu, (InformationObject)st);
-                    success = true;
+                    success = IMasterConnection_sendASDU(targetConnection, asdu);
                     StepPositionInformation_destroy(st);
                     break;
                 }
@@ -583,7 +568,7 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     uint32_t value = cmdObj.Get("value").As<Napi::Number>().Uint32Value();
                     BitString32 bo = BitString32_create(NULL, ioa, value);
                     CS101_ASDU_addInformationObject(asdu, (InformationObject)bo);
-                    success = true;
+                    success = IMasterConnection_sendASDU(targetConnection, asdu);
                     BitString32_destroy(bo);
                     break;
                 }
@@ -601,7 +586,7 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     }
                     MeasuredValueNormalized mn = MeasuredValueNormalized_create(NULL, ioa, value, quality);
                     CS101_ASDU_addInformationObject(asdu, (InformationObject)mn);
-                    success = true;
+                    success = IMasterConnection_sendASDU(targetConnection, asdu);
                     MeasuredValueNormalized_destroy(mn);
                     break;
                 }
@@ -620,7 +605,7 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     }
                     MeasuredValueScaled ms = MeasuredValueScaled_create(NULL, ioa, value, quality);
                     CS101_ASDU_addInformationObject(asdu, (InformationObject)ms);
-                    success = true;
+                    success = IMasterConnection_sendASDU(targetConnection, asdu);
                     MeasuredValueScaled_destroy(ms);
                     break;
                 }
@@ -634,7 +619,7 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     float value = static_cast<float>(doubleValue);
                     MeasuredValueShort mc = MeasuredValueShort_create(NULL, ioa, value, quality);
                     CS101_ASDU_addInformationObject(asdu, (InformationObject)mc);
-                    success = true;
+                    success = IMasterConnection_sendASDU(targetConnection, asdu);
                     MeasuredValueShort_destroy(mc);
                     break;
                 }
@@ -648,7 +633,7 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     BinaryCounterReading bcr = BinaryCounterReading_create(NULL, value, 0, false, false, false);
                     IntegratedTotals it = IntegratedTotals_create(NULL, ioa, bcr);
                     CS101_ASDU_addInformationObject(asdu, (InformationObject)it);
-                    success = true;
+                    success = IMasterConnection_sendASDU(targetConnection, asdu);
                     IntegratedTotals_destroy(it);
                     BinaryCounterReading_destroy(bcr);
                     break;
@@ -663,7 +648,7 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     uint64_t timestamp = cmdObj.Get("timestamp").As<Napi::Number>().Int64Value();
                     SinglePointWithCP56Time2a sp = SinglePointWithCP56Time2a_create(NULL, ioa, value, quality, CP56Time2a_createFromMsTimestamp(NULL, timestamp));
                     CS101_ASDU_addInformationObject(asdu, (InformationObject)sp);
-                    success = true;
+                    success = IMasterConnection_sendASDU(targetConnection, asdu);
                     SinglePointWithCP56Time2a_destroy(sp);
                     break;
                 }
@@ -682,7 +667,7 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     }
                     DoublePointWithCP56Time2a dp = DoublePointWithCP56Time2a_create(NULL, ioa, (DoublePointValue)value, quality, CP56Time2a_createFromMsTimestamp(NULL, timestamp));
                     CS101_ASDU_addInformationObject(asdu, (InformationObject)dp);
-                    success = true;
+                    success = IMasterConnection_sendASDU(targetConnection, asdu);
                     DoublePointWithCP56Time2a_destroy(dp);
                     break;
                 }
@@ -701,7 +686,7 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     }
                     StepPositionWithCP56Time2a st = StepPositionWithCP56Time2a_create(NULL, ioa, value, false, quality, CP56Time2a_createFromMsTimestamp(NULL, timestamp));
                     CS101_ASDU_addInformationObject(asdu, (InformationObject)st);
-                    success = true;
+                    success = IMasterConnection_sendASDU(targetConnection, asdu);
                     StepPositionWithCP56Time2a_destroy(st);
                     break;
                 }
@@ -715,7 +700,7 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     uint64_t timestamp = cmdObj.Get("timestamp").As<Napi::Number>().Int64Value();
                     Bitstring32WithCP56Time2a bo = Bitstring32WithCP56Time2a_create(NULL, ioa, value, CP56Time2a_createFromMsTimestamp(NULL, timestamp));
                     CS101_ASDU_addInformationObject(asdu, (InformationObject)bo);
-                    success = true;
+                    success = IMasterConnection_sendASDU(targetConnection, asdu);
                     Bitstring32WithCP56Time2a_destroy(bo);
                     break;
                 }
@@ -735,7 +720,7 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     }
                     MeasuredValueNormalizedWithCP56Time2a mn = MeasuredValueNormalizedWithCP56Time2a_create(NULL, ioa, value, quality, CP56Time2a_createFromMsTimestamp(NULL, timestamp));
                     CS101_ASDU_addInformationObject(asdu, (InformationObject)mn);
-                    success = true;
+                    success = IMasterConnection_sendASDU(targetConnection, asdu);
                     MeasuredValueNormalizedWithCP56Time2a_destroy(mn);
                     break;
                 }
@@ -754,7 +739,7 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     }
                     MeasuredValueScaledWithCP56Time2a ms = MeasuredValueScaledWithCP56Time2a_create(NULL, ioa, value, quality, CP56Time2a_createFromMsTimestamp(NULL, timestamp));
                     CS101_ASDU_addInformationObject(asdu, (InformationObject)ms);
-                    success = true;
+                    success = IMasterConnection_sendASDU(targetConnection, asdu);
                     MeasuredValueScaledWithCP56Time2a_destroy(ms);
                     break;
                 }
@@ -769,7 +754,7 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     uint64_t timestamp = cmdObj.Get("timestamp").As<Napi::Number>().Int64Value();
                     MeasuredValueShortWithCP56Time2a mc = MeasuredValueShortWithCP56Time2a_create(NULL, ioa, value, quality, CP56Time2a_createFromMsTimestamp(NULL, timestamp));
                     CS101_ASDU_addInformationObject(asdu, (InformationObject)mc);
-                    success = true;
+                    success = IMasterConnection_sendASDU(targetConnection, asdu);
                     MeasuredValueShortWithCP56Time2a_destroy(mc);
                     break;
                 }
@@ -784,7 +769,7 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     BinaryCounterReading bcr = BinaryCounterReading_create(NULL, value, 0, false, false, false);
                     IntegratedTotalsWithCP56Time2a it = IntegratedTotalsWithCP56Time2a_create(NULL, ioa, bcr, CP56Time2a_createFromMsTimestamp(NULL, timestamp));
                     CS101_ASDU_addInformationObject(asdu, (InformationObject)it);
-                    success = true;
+                    success = IMasterConnection_sendASDU(targetConnection, asdu);
                     IntegratedTotalsWithCP56Time2a_destroy(it);
                     BinaryCounterReading_destroy(bcr);
                     break;
@@ -798,7 +783,7 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     bool value = cmdObj.Get("value").As<Napi::Boolean>();
                     SingleCommand sc = SingleCommand_create(NULL, ioa, value, bselCmd, ql);
                     CS101_ASDU_addInformationObject(asdu, (InformationObject)sc);
-                    success = true;
+                    success = IMasterConnection_sendASDU(targetConnection, asdu);
                     SingleCommand_destroy(sc);
                     break;
                 }
@@ -816,7 +801,7 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     }
                     DoubleCommand dc = DoubleCommand_create(NULL, ioa, value, bselCmd, ql);
                     CS101_ASDU_addInformationObject(asdu, (InformationObject)dc);
-                    success = true;
+                    success = IMasterConnection_sendASDU(targetConnection, asdu);
                     DoubleCommand_destroy(dc);
                     break;
                 }
@@ -835,7 +820,7 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     }
                     StepCommandWithCP56Time2a rc = StepCommandWithCP56Time2a_create(NULL, ioa, (StepCommandValue)value, bselCmd, ql, CP56Time2a_createFromMsTimestamp(NULL, timestamp));
                     CS101_ASDU_addInformationObject(asdu, (InformationObject)rc);
-                    success = true;
+                    success = IMasterConnection_sendASDU(targetConnection, asdu);
                     StepCommandWithCP56Time2a_destroy(rc);
                     break;
                 }
@@ -862,7 +847,7 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     }
                     SetpointCommandNormalizedWithCP56Time2a se = SetpointCommandNormalizedWithCP56Time2a_create(NULL, ioa, value, bselCmd, ql, CP56Time2a_createFromMsTimestamp(NULL, timestamp));
                     CS101_ASDU_addInformationObject(asdu, (InformationObject)se);
-                    success = true;
+                    success = IMasterConnection_sendASDU(targetConnection, asdu);
                     SetpointCommandNormalizedWithCP56Time2a_destroy(se);
                     break;
                 }
@@ -880,7 +865,7 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     }
                     SetpointCommandScaled se = SetpointCommandScaled_create(NULL, ioa, value, bselCmd, ql);
                     CS101_ASDU_addInformationObject(asdu, (InformationObject)se);
-                    success = true;
+                    success = IMasterConnection_sendASDU(targetConnection, asdu);
                     SetpointCommandScaled_destroy(se);
                     break;
                 }
@@ -901,7 +886,7 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     }
                     SetpointCommandShort se = SetpointCommandShort_create(NULL, ioa, value, bselCmd, ql);
                     CS101_ASDU_addInformationObject(asdu, (InformationObject)se);
-                    success = true;
+                    success = IMasterConnection_sendASDU(targetConnection, asdu);
                     SetpointCommandShort_destroy(se);
                     break;
                 }
@@ -914,7 +899,7 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     uint32_t value = cmdObj.Get("value").As<Napi::Number>().Uint32Value();
                     Bitstring32Command bo = Bitstring32Command_create(NULL, ioa, value);
                     CS101_ASDU_addInformationObject(asdu, (InformationObject)bo);
-                    success = true;
+                    success = IMasterConnection_sendASDU(targetConnection, asdu);
                     Bitstring32Command_destroy(bo);
                     break;
                 }
@@ -928,7 +913,7 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     uint64_t timestamp = cmdObj.Get("timestamp").As<Napi::Number>().Int64Value();
                     SingleCommandWithCP56Time2a sc = SingleCommandWithCP56Time2a_create(NULL, ioa, value, bselCmd, ql, CP56Time2a_createFromMsTimestamp(NULL, timestamp));
                     CS101_ASDU_addInformationObject(asdu, (InformationObject)sc);
-                    success = true;
+                    success = IMasterConnection_sendASDU(targetConnection, asdu);
                     SingleCommandWithCP56Time2a_destroy(sc);
                     break;
                 }
@@ -947,7 +932,7 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     }
                     DoubleCommandWithCP56Time2a dc = DoubleCommandWithCP56Time2a_create(NULL, ioa, value, bselCmd, ql, CP56Time2a_createFromMsTimestamp(NULL, timestamp));
                     CS101_ASDU_addInformationObject(asdu, (InformationObject)dc);
-                    success = true;
+                    success = IMasterConnection_sendASDU(targetConnection, asdu);
                     DoubleCommandWithCP56Time2a_destroy(dc);
                     break;
                 }
@@ -966,7 +951,7 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     }
                     SetpointCommandScaledWithCP56Time2a se = SetpointCommandScaledWithCP56Time2a_create(NULL, ioa, value, bselCmd, ql, CP56Time2a_createFromMsTimestamp(NULL, timestamp));
                     CS101_ASDU_addInformationObject(asdu, (InformationObject)se);
-                    success = true;
+                    success = IMasterConnection_sendASDU(targetConnection, asdu);
                     SetpointCommandScaledWithCP56Time2a_destroy(se);
                     break;
                 }
@@ -988,7 +973,7 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     uint64_t timestamp = cmdObj.Get("timestamp").As<Napi::Number>().Int64Value();
                     SetpointCommandShortWithCP56Time2a se = SetpointCommandShortWithCP56Time2a_create(NULL, ioa, value, bselCmd, ql, CP56Time2a_createFromMsTimestamp(NULL, timestamp));
                     CS101_ASDU_addInformationObject(asdu, (InformationObject)se);
-                    success = true;
+                    success = IMasterConnection_sendASDU(targetConnection, asdu);
                     SetpointCommandShortWithCP56Time2a_destroy(se);
                     break;
                 }
@@ -1002,7 +987,7 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     uint64_t timestamp = cmdObj.Get("timestamp").As<Napi::Number>().Int64Value();
                     Bitstring32CommandWithCP56Time2a bo = Bitstring32CommandWithCP56Time2a_create(NULL, ioa, value, CP56Time2a_createFromMsTimestamp(NULL, timestamp));
                     CS101_ASDU_addInformationObject(asdu, (InformationObject)bo);
-                    success = true;
+                    success = IMasterConnection_sendASDU(targetConnection, asdu);
                     Bitstring32CommandWithCP56Time2a_destroy(bo);
                     break;
                 }
@@ -1020,7 +1005,7 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     }
                     InterrogationCommand ic = InterrogationCommand_create(NULL, ioa, value);
                     CS101_ASDU_addInformationObject(asdu, (InformationObject)ic);
-                    success = true;
+                    success = IMasterConnection_sendASDU(targetConnection, asdu);
                     InterrogationCommand_destroy(ic);
                     break;
                 }
@@ -1038,14 +1023,14 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     }
                     CounterInterrogationCommand ci = CounterInterrogationCommand_create(NULL, ioa, value);
                     CS101_ASDU_addInformationObject(asdu, (InformationObject)ci);
-                    success = true;
+                    success = IMasterConnection_sendASDU(targetConnection, asdu);
                     CounterInterrogationCommand_destroy(ci);
                     break;
                 }
                 case C_RD_NA_1: {
                     ReadCommand rd = ReadCommand_create(NULL, ioa);
                     CS101_ASDU_addInformationObject(asdu, (InformationObject)rd);
-                    success = true;
+                    success = IMasterConnection_sendASDU(targetConnection, asdu);
                     ReadCommand_destroy(rd);
                     break;
                 }
@@ -1058,46 +1043,33 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     uint64_t timestamp = cmdObj.Get("timestamp").As<Napi::Number>().Int64Value();
                     ClockSynchronizationCommand cs = ClockSynchronizationCommand_create(NULL, ioa, CP56Time2a_createFromMsTimestamp(NULL, timestamp));
                     CS101_ASDU_addInformationObject(asdu, (InformationObject)cs);
-                    success = true;
+                    success = IMasterConnection_sendASDU(targetConnection, asdu);
                     ClockSynchronizationCommand_destroy(cs);
                     break;
                 }
                 default:
                     printf("Unsupported command type: %d, serverID: %s, clientId: %s\n", typeId, serverID.c_str(), clientIdStr.c_str());
                     fflush(stdout);
+                    CS101_ASDU_destroy(asdu);
                     allSuccess = false;
                     continue;
             }
 
+            CS101_ASDU_destroy(asdu);
+
             if (!success) {
                 allSuccess = false;
-                printf("Failed to prepare command: typeId=%d, ioa=%d, asduAddress=%d, bselCmd=%d, ql=%d, serverID: %s, clientId: %s\n",
+                printf("Failed to send command: typeId=%d, ioa=%d, asduAddress=%d, bselCmd=%d, ql=%d, serverID: %s, clientId: %s\n",
                        typeId, ioa, asduAddress, bselCmd, ql, serverID.c_str(), clientIdStr.c_str());
                 fflush(stdout);
             } else {
-                printf("Prepared command: typeId=%d, ioa=%d, asduAddress=%d, bselCmd=%d, ql=%d, serverID: %s, clientId: %s\n",
+                printf("Sent command: typeId=%d, ioa=%d, asduAddress=%d, bselCmd=%d, ql=%d, serverID: %s, clientId: %s\n",
                        typeId, ioa, asduAddress, bselCmd, ql, serverID.c_str(), clientIdStr.c_str());
                 fflush(stdout);
             }
         }
-
-        bool success = IMasterConnection_sendASDU(targetConnection, asdu);
-        CS101_ASDU_destroy(asdu);
-
-        if (!success) {
-            allSuccess = false;
-            printf("Failed to send ASDU, serverID: %s, clientId: %s\n", serverID.c_str(), clientIdStr.c_str());
-            fflush(stdout);
-        } else {
-            printf("Sent ASDU with %d commands, serverID: %s, clientId: %s\n", CS101_ASDU_getNumberOfElements(asdu), serverID.c_str(), clientIdStr.c_str());
-            fflush(stdout);
-        }
-
         return Napi::Boolean::New(env, allSuccess);
     } catch (const std::exception& e) {
-        if (asdu) {
-            CS101_ASDU_destroy(asdu);
-        }
         printf("Exception in SendCommands: %s, serverID: %s\n", e.what(), serverID.c_str());
         fflush(stdout);
         Napi::Error::New(env, string("SendCommands failed: ") + e.what()).ThrowAsJavaScriptException();
