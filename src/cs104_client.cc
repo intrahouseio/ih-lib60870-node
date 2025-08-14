@@ -1341,6 +1341,71 @@ void IEC104Client::ConnectionHandler(void* parameter, CS104_Connection con, CS10
                     }
                     break;
 
+               // Добавляем обработку защитных событий с временными метками
+                case M_EP_TD_1: { // Защитное событие с нормализованным значением и временем
+                    for (int i = 0; i < numberOfElements; i++) {
+                        EventOfProtectionEquipmentWithCP56Time2a io = 
+                            (EventOfProtectionEquipmentWithCP56Time2a)CS101_ASDU_getElement(asdu, i);
+                        if (io) {
+                            int ioa = InformationObject_getObjectAddress((InformationObject)io);
+                            SingleEvent valSE = EventOfProtectionEquipmentWithCP56Time2a_getEvent(io);
+                            EventState val = SingleEvent_getEventState(valSE);
+                            uint8_t quality = IEC60870_QUALITY_GOOD;
+                            uint64_t timestamp = CP56Time2a_toMsTimestamp(
+                                EventOfProtectionEquipmentWithCP56Time2a_getTimestamp(io));
+                            
+                            elements.emplace_back(ioa, static_cast<double>(val), quality, timestamp);
+                            
+                            printf("M_EP_TD_1: IOA=%d, State=%u, Quality=%u, Timestamp=%" PRIu64 ", clientID: %s\n",
+                                ioa, val, quality, timestamp, client->clientID.c_str());
+                            
+                            EventOfProtectionEquipmentWithCP56Time2a_destroy(io);
+                        }
+                    }
+                    break;
+                }
+
+                case M_EP_TE_1: { // Защитное событие с масштабированным значением и временем
+                    for (int i = 0; i < numberOfElements; i++) {
+                        PackedStartEventsOfProtectionEquipmentWithCP56Time2a io = (PackedStartEventsOfProtectionEquipmentWithCP56Time2a)CS101_ASDU_getElement(asdu, i);
+                        if (io) {
+                            int ioa = InformationObject_getObjectAddress((InformationObject)io);
+                            StartEvent val = PackedStartEventsOfProtectionEquipmentWithCP56Time2a_getEvent(io);
+                            uint8_t quality = PackedStartEventsOfProtectionEquipmentWithCP56Time2a_getQuality(io);
+                            uint64_t timestamp = CP56Time2a_toMsTimestamp(PackedStartEventsOfProtectionEquipmentWithCP56Time2a_getTimestamp(io));
+                            
+                            elements.emplace_back(ioa, static_cast<double>(val), quality, timestamp);
+                            
+                            printf("M_EP_TE_1: IOA=%d, State=%u, Quality=%u, Timestamp=%" PRIu64 ", clientID: %s\n",
+                                ioa, val, quality, timestamp, client->clientID.c_str());
+                            
+                            PackedStartEventsOfProtectionEquipmentWithCP56Time2a_destroy(io);
+                        }
+                    }
+                    break;
+                }
+
+                case M_EP_TF_1: { // Защитное событие с коротким значением и временем
+                    for (int i = 0; i < numberOfElements; i++) {
+                        PackedOutputCircuitInfoWithCP56Time2a io = 
+                            (PackedOutputCircuitInfoWithCP56Time2a)CS101_ASDU_getElement(asdu, i);
+                        if (io) {
+                            int ioa = InformationObject_getObjectAddress((InformationObject)io);
+                            OutputCircuitInfo val = PackedOutputCircuitInfoWithCP56Time2a_getOCI(io);
+                            uint8_t quality = PackedOutputCircuitInfoWithCP56Time2a_getQuality(io);
+                            uint64_t timestamp = CP56Time2a_toMsTimestamp(PackedOutputCircuitInfoWithCP56Time2a_getTimestamp(io));
+                            
+                            elements.emplace_back(ioa, static_cast<double>(val), quality, timestamp);
+                            
+                            printf("M_EP_TF_1: IOA=%d, State=%u, Quality=%u, Timestamp=%" PRIu64 ", clientID: %s\n",
+                                ioa, val, quality, timestamp, client->clientID.c_str());
+                            
+                            PackedOutputCircuitInfoWithCP56Time2a_destroy(io);
+                        }
+                    }
+                    break;
+                }
+
             
     
     case F_DR_TA_1: {

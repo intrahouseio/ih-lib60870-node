@@ -484,6 +484,16 @@
     "want_separate_host_toolset": 0,
     "nodedir": "/Users/andreypetrov/Library/Caches/node-gyp/23.9.0",
     "python": "/opt/homebrew/opt/python@3.13/bin/python3.13",
-    "standalone_static_library": 1
+    "standalone_static_library": 1,
+    "global_prefix": "/opt/homebrew",
+    "local_prefix": "/Users/andreypetrov/Downloads/ih-lib60870-node",
+    "globalconfig": "/opt/homebrew/etc/npmrc",
+    "userconfig": "/Users/andreypetrov/.npmrc",
+    "init_module": "/Users/andreypetrov/.npm-init.js",
+    "npm_version": "10.9.2",
+    "node_gyp": "/opt/homebrew/lib/node_modules/npm/node_modules/node-gyp/bin/node-gyp.js",
+    "cache": "/Users/andreypetrov/.npm",
+    "user_agent": "npm/10.9.2 node/v23.9.0 darwin arm64 workspaces/false",
+    "prefix": "/opt/homebrew"
   }
 }

@@ -148,10 +148,10 @@ cmd_pch_mm = $(CC.$(TOOLSET)) $(GYP_PCH_OBJCXXFLAGS) $(DEPFLAGS) -c -o $@ $<
 # Use $(4) for the command, since $(2) and $(3) are used as flag by do_cmd
 # already.
 quiet_cmd_mac_tool = MACTOOL $(4) $<
-cmd_mac_tool = /opt/homebrew/opt/python@3.13/bin/python3.13 gyp-mac-tool $(4) $< "$@"
+cmd_mac_tool = ./gyp-mac-tool $(4) $< "$@"
 
 quiet_cmd_mac_package_framework = PACKAGE FRAMEWORK $@
-cmd_mac_package_framework = /opt/homebrew/opt/python@3.13/bin/python3.13 gyp-mac-tool package-framework "$@" $(4)
+cmd_mac_package_framework = ./gyp-mac-tool package-framework "$@" $(4)
 
 quiet_cmd_infoplist = INFOPLIST $@
 cmd_infoplist = $(CC.$(TOOLSET)) -E -P -Wno-trigraphs -x c $(INFOPLIST_DEFINES) "$<" -o "$@"
@@ -167,7 +167,7 @@ quiet_cmd_symlink = SYMLINK $@
 cmd_symlink = ln -sf "$<" "$@"
 
 quiet_cmd_alink = LIBTOOL-STATIC $@
-cmd_alink = rm -f $@ && /opt/homebrew/opt/python@3.13/bin/python3.13 gyp-mac-tool filter-libtool libtool $(GYP_LIBTOOLFLAGS) -static -o $@ $(filter %.o,$^)
+cmd_alink = rm -f $@ && ./gyp-mac-tool filter-libtool libtool $(GYP_LIBTOOLFLAGS) -static -o $@ $(filter %.o,$^)
 
 quiet_cmd_link = LINK($(TOOLSET)) $@
 cmd_link = $(LINK.$(TOOLSET)) $(GYP_LDFLAGS) $(LDFLAGS.$(TOOLSET)) -o "$@" $(LD_INPUTS) $(LIBS)
@@ -331,8 +331,8 @@ ifeq ($(strip $(foreach prefix,$(NO_LOAD),\
 endif
 
 quiet_cmd_regen_makefile = ACTION Regenerating $@
-cmd_regen_makefile = cd $(srcdir); /opt/homebrew/lib/node_modules/node-gyp/gyp/gyp_main.py -fmake --ignore-environment "-Dlibrary=shared_library" "-Dvisibility=default" "-Dnode_root_dir=/Users/andreypetrov/Library/Caches/node-gyp/23.9.0" "-Dnode_gyp_dir=/opt/homebrew/lib/node_modules/node-gyp" "-Dnode_lib_file=/Users/andreypetrov/Library/Caches/node-gyp/23.9.0/<(target_arch)/node.lib" "-Dmodule_root_dir=/Users/andreypetrov/Downloads/ih-lib60870-node" "-Dnode_engine=v8" "--depth=." "-Goutput_dir=." "--generator-output=build" -I/Users/andreypetrov/Downloads/ih-lib60870-node/build/config.gypi -I/opt/homebrew/lib/node_modules/node-gyp/addon.gypi -I/Users/andreypetrov/Library/Caches/node-gyp/23.9.0/include/node/common.gypi "--toplevel-dir=." binding.gyp
-Makefile: $(srcdir)/binding.gyp $(srcdir)/build/config.gypi $(srcdir)/../../../../opt/homebrew/lib/node_modules/node-gyp/addon.gypi $(srcdir)/../../Library/Caches/node-gyp/23.9.0/include/node/common.gypi
+cmd_regen_makefile = cd $(srcdir); /Users/andreypetrov/Downloads/ih-lib60870-node/node_modules/node-gyp/gyp/gyp_main.py -fmake --ignore-environment "-Dlibrary=shared_library" "-Dvisibility=default" "-Dnode_root_dir=/Users/andreypetrov/Library/Caches/node-gyp/23.9.0" "-Dnode_gyp_dir=/Users/andreypetrov/Downloads/ih-lib60870-node/node_modules/node-gyp" "-Dnode_lib_file=/Users/andreypetrov/Library/Caches/node-gyp/23.9.0/<(target_arch)/node.lib" "-Dmodule_root_dir=/Users/andreypetrov/Downloads/ih-lib60870-node" "-Dnode_engine=v8" "--depth=." "-Goutput_dir=." "--generator-output=build" -I/Users/andreypetrov/Downloads/ih-lib60870-node/build/config.gypi -I/Users/andreypetrov/Downloads/ih-lib60870-node/node_modules/node-gyp/addon.gypi -I/Users/andreypetrov/Library/Caches/node-gyp/23.9.0/include/node/common.gypi "--toplevel-dir=." binding.gyp
+Makefile: $(srcdir)/binding.gyp $(srcdir)/build/config.gypi $(srcdir)/../../Library/Caches/node-gyp/23.9.0/include/node/common.gypi $(srcdir)/node_modules/node-gyp/addon.gypi
 	$(call do_cmd,regen_makefile)
 
 # "all" is a concatenation of the "all" targets from all the included
