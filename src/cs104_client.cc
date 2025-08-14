@@ -1340,9 +1340,8 @@ void IEC104Client::ConnectionHandler(void* parameter, CS104_Connection con, CS10
                         }
                     }
                     break;
-
-               // Добавляем обработку защитных событий с временными метками
-                case M_EP_TD_1: { // Защитное событие с нормализованным значением и временем
+               
+                case M_EP_TD_1: { 
                     for (int i = 0; i < numberOfElements; i++) {
                         EventOfProtectionEquipmentWithCP56Time2a io = 
                             (EventOfProtectionEquipmentWithCP56Time2a)CS101_ASDU_getElement(asdu, i);
@@ -1350,11 +1349,11 @@ void IEC104Client::ConnectionHandler(void* parameter, CS104_Connection con, CS10
                             int ioa = InformationObject_getObjectAddress((InformationObject)io);
                             SingleEvent valSE = EventOfProtectionEquipmentWithCP56Time2a_getEvent(io);
                             EventState val = SingleEvent_getEventState(valSE);
-                            uint8_t quality = IEC60870_QUALITY_GOOD;
+                            QualityDescriptorP quality = SingleEvent_getQDP(valSE);                            
                             uint64_t timestamp = CP56Time2a_toMsTimestamp(
                                 EventOfProtectionEquipmentWithCP56Time2a_getTimestamp(io));
                             
-                            elements.emplace_back(ioa, static_cast<double>(val), quality, timestamp);
+                            elements.emplace_back(ioa, static_cast<double>(val), static_cast<uint8_t>(quality), timestamp);
                             
                             printf("M_EP_TD_1: IOA=%d, State=%u, Quality=%u, Timestamp=%" PRIu64 ", clientID: %s\n",
                                 ioa, val, quality, timestamp, client->clientID.c_str());
@@ -1365,7 +1364,7 @@ void IEC104Client::ConnectionHandler(void* parameter, CS104_Connection con, CS10
                     break;
                 }
 
-                case M_EP_TE_1: { // Защитное событие с масштабированным значением и временем
+                case M_EP_TE_1: { 
                     for (int i = 0; i < numberOfElements; i++) {
                         PackedStartEventsOfProtectionEquipmentWithCP56Time2a io = (PackedStartEventsOfProtectionEquipmentWithCP56Time2a)CS101_ASDU_getElement(asdu, i);
                         if (io) {
@@ -1385,7 +1384,7 @@ void IEC104Client::ConnectionHandler(void* parameter, CS104_Connection con, CS10
                     break;
                 }
 
-                case M_EP_TF_1: { // Защитное событие с коротким значением и временем
+                case M_EP_TF_1: { 
                     for (int i = 0; i < numberOfElements; i++) {
                         PackedOutputCircuitInfoWithCP56Time2a io = 
                             (PackedOutputCircuitInfoWithCP56Time2a)CS101_ASDU_getElement(asdu, i);
