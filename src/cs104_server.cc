@@ -59,12 +59,12 @@ IEC104Server::IEC104Server(const Napi::CallbackInfo& info) : Napi::ObjectWrap<IE
             0,
             1,
             [this](Napi::Env) {
-                printf("ThreadSafeFunction finalized, serverID: %s\n", serverID.c_str());
+               // printf("ThreadSafeFunction finalized, serverID: %s\n", serverID.c_str());
                 fflush(stdout);
             }
         );
     } catch (const std::exception& e) {
-        printf("Failed to create ThreadSafeFunction: %s\n", e.what());
+        //printf("Failed to create ThreadSafeFunction: %s\n", e.what());
         fflush(stdout);
         Napi::Error::New(info.Env(), string("TSFN creation failed: ") + e.what()).ThrowAsJavaScriptException();
     }
@@ -77,7 +77,7 @@ IEC104Server::~IEC104Server() {
         if (running) {
             running = false;
             if (started && server) {
-                printf("Destructor stopping server, serverID: %s\n", serverID.c_str());
+               // printf("Destructor stopping server, serverID: %s\n", serverID.c_str());
                 fflush(stdout);
                 CS104_Slave_stop(server);
                 CS104_Slave_destroy(server);
@@ -173,7 +173,7 @@ Napi::Value IEC104Server::Start(const Napi::CallbackInfo& info) {
     }
 
     try {
-        printf("Creating server on port %d, serverID: %s, mode: %s\n", port, serverID.c_str(), mode.c_str());
+       // printf("Creating server on port %d, serverID: %s, mode: %s\n", port, serverID.c_str(), mode.c_str());
         fflush(stdout);
         server = CS104_Slave_create(maxClients, maxClients);
         if (!server) {
@@ -219,7 +219,7 @@ Napi::Value IEC104Server::Start(const Napi::CallbackInfo& info) {
                             CS104_Slave_addRedundancyGroup(server, redundancyGroups[group]);
                         }
                         CS104_RedundancyGroup_addAllowedClient(redundancyGroups[group], ip.c_str());
-                        printf("Added client %s to redundancy group %s\n", ip.c_str(), group.c_str());
+                       // printf("Added client %s to redundancy group %s\n", ip.c_str(), group.c_str());
                         fflush(stdout);
                     }
                 }
@@ -229,13 +229,13 @@ Napi::Value IEC104Server::Start(const Napi::CallbackInfo& info) {
                 std::string defaultGroup = "DefaultGroup";
                 redundancyGroups[defaultGroup] = CS104_RedundancyGroup_create(defaultGroup.c_str());
                 CS104_Slave_addRedundancyGroup(server, redundancyGroups[defaultGroup]);
-                printf("Created default redundancy group: %s (no IP restrictions)\n", defaultGroup.c_str());
+               // printf("Created default redundancy group: %s (no IP restrictions)\n", defaultGroup.c_str());
                 fflush(stdout);
             }
         }
 
-        printf("Starting server with params: originatorAddress=%d, k=%d, w=%d, t0=%d, t1=%d, t2=%d, t3=%d, maxClients=%d, serverID: %s, mode: %s\n",
-               originatorAddress, k, w, t0, t1, t2, t3, maxClients, serverID.c_str(), mode.c_str());
+        // printf("Starting server with params: originatorAddress=%d, k=%d, w=%d, t0=%d, t1=%d, t2=%d, t3=%d, maxClients=%d, serverID: %s, mode: %s\n",
+        //        originatorAddress, k, w, t0, t1, t2, t3, maxClients, serverID.c_str(), mode.c_str());
         fflush(stdout);
 
         running = true;
@@ -245,7 +245,7 @@ Napi::Value IEC104Server::Start(const Napi::CallbackInfo& info) {
                 std::lock_guard<std::mutex> lock(connMutex);
                 started = true;
             }
-            printf("Server started, serverID: %s\n", serverID.c_str());
+           // printf("Server started, serverID: %s\n", serverID.c_str());
             fflush(stdout);
 
          while (running) {
@@ -258,7 +258,7 @@ Napi::Value IEC104Server::Start(const Napi::CallbackInfo& info) {
                 if (started && server) {
                     CS104_Slave_stop(server);
                     started = false;
-                    printf("Server stopped by thread, serverID: %s\n", serverID.c_str());
+                //    printf("Server stopped by thread, serverID: %s\n", serverID.c_str());
                     fflush(stdout);
                 }
             }
@@ -270,7 +270,7 @@ Napi::Value IEC104Server::Start(const Napi::CallbackInfo& info) {
             CS104_Slave_destroy(server);
             server = nullptr;
         }
-        printf("Exception in Start: %s, serverID: %s\n", e.what(), serverID.c_str());
+       // printf("Exception in Start: %s, serverID: %s\n", e.what(), serverID.c_str());
         fflush(stdout);
         Napi::Error::New(env, string("Start failed: ") + e.what()).ThrowAsJavaScriptException();
         return env.Undefined();
@@ -279,23 +279,23 @@ Napi::Value IEC104Server::Start(const Napi::CallbackInfo& info) {
 
 bool IEC104Server::ConnectionRequestHandler(void* parameter, const char* ipAddress) {
     IEC104Server* server = static_cast<IEC104Server*>(parameter);
-    printf("Connection request from %s, serverID: %s\n", ipAddress, server->serverID.c_str());
+   // printf("Connection request from %s, serverID: %s\n", ipAddress, server->serverID.c_str());
     fflush(stdout);
 
     if (server->serverMode == CS104_MODE_CONNECTION_IS_REDUNDANCY_GROUP) { // Исправлено
         // В режиме multi разрешаем все подключения
-       printf("Connection allowed (multi mode), IP: %s, serverID: %s\n", ipAddress, server->serverID.c_str());
+       //printf("Connection allowed (multi mode), IP: %s, serverID: %s\n", ipAddress, server->serverID.c_str());
         fflush(stdout);
         return true;
     }
 
     // В режиме redundant проверяем IP, если ограничения заданы
     if (server->restrictIPs) {
-        printf("Connection request for IP %s, validated by redundancy groups, serverID: %s\n", ipAddress, server->serverID.c_str());
+       // printf("Connection request for IP %s, validated by redundancy groups, serverID: %s\n", ipAddress, server->serverID.c_str());
             fflush(stdout);
             return true; // lib60870 will reject invalid IPs
         } else {
-            printf("IP %s added to DefaultGroup (no restrictions), serverID: %s\n", ipAddress, server->serverID.c_str());
+          //  printf("IP %s added to DefaultGroup (no restrictions), serverID: %s\n", ipAddress, server->serverID.c_str());
             fflush(stdout);
             if (server->redundancyGroups.find("DefaultGroup") != server->redundancyGroups.end()) {
                 CS104_RedundancyGroup_addAllowedClient(server->redundancyGroups["DefaultGroup"], ipAddress);
@@ -373,8 +373,8 @@ void IEC104Server::ConnectionEventHandler(void* parameter, IMasterConnection con
         }
     }
 
-    printf("Connection event: %s, clientId: %s, reason: %s, serverID: %s\n",
-           eventStr.c_str(), clientIdStr.c_str(), reason.c_str(), server->serverID.c_str());
+    // printf("Connection event: %s, clientId: %s, reason: %s, serverID: %s\n",
+    //        eventStr.c_str(), clientIdStr.c_str(), reason.c_str(), server->serverID.c_str());
     fflush(stdout);
 
     server->tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
@@ -395,7 +395,7 @@ Napi::Value IEC104Server::Stop(const Napi::CallbackInfo& info) {
         if (running) {
             running = false;
             if (started && server) {
-                printf("Stop called, stopping server, serverID: %s\n", serverID.c_str());
+               // printf("Stop called, stopping server, serverID: %s\n", serverID.c_str());
                 fflush(stdout);
                 CS104_Slave_stop(server);
                 CS104_Slave_destroy(server);
@@ -1062,7 +1062,7 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                     break;
                 }
                 default:
-                        printf("Unsupported command type: %d, serverID: %s, clientId: %s\n", typeId, serverID.c_str(), clientIdStr.c_str());
+                       // printf("Unsupported command type: %d, serverID: %s, clientId: %s\n", typeId, serverID.c_str(), clientIdStr.c_str());
                         fflush(stdout);
                         success = false;
                         break;
@@ -1074,12 +1074,12 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
                 success = IMasterConnection_sendASDU(targetConnection, asdu);
                 if (!success) {
                     allSuccess = false;
-                    printf("Failed to send ASDU: typeId=%d, asduAddress=%d, serverID: %s, clientId: %s\n",
-                           typeId, asduAddress, serverID.c_str(), clientIdStr.c_str());
+                    // printf("Failed to send ASDU: typeId=%d, asduAddress=%d, serverID: %s, clientId: %s\n",
+                    //        typeId, asduAddress, serverID.c_str(), clientIdStr.c_str());
                     fflush(stdout);
                 } else {
-                    printf("Sent ASDU: typeId=%d, asduAddress=%d, serverID: %s, clientId: %s\n",
-                           typeId, asduAddress, serverID.c_str(), clientIdStr.c_str());
+                    // printf("Sent ASDU: typeId=%d, asduAddress=%d, serverID: %s, clientId: %s\n",
+                    //        typeId, asduAddress, serverID.c_str(), clientIdStr.c_str());
                     fflush(stdout);
                 }
             }
@@ -1089,7 +1089,7 @@ Napi::Value IEC104Server::SendCommands(const Napi::CallbackInfo& info) {
 
         return Napi::Boolean::New(env, allSuccess);
     } catch (const std::exception& e) {
-        printf("Exception in SendCommands: %s, serverID: %s\n", e.what(), serverID.c_str());
+       // printf("Exception in SendCommands: %s, serverID: %s\n", e.what(), serverID.c_str());
         fflush(stdout);
         Napi::Error::New(env, string("SendCommands failed: ") + e.what()).ThrowAsJavaScriptException();
         return Napi::Boolean::New(env, false);
@@ -1129,7 +1129,7 @@ bool IEC104Server::RawMessageHandler(void* parameter, IMasterConnection connecti
         if (server->clientConnections.find(connection) != server->clientConnections.end()) {
             clientIdStr = server->clientConnections[connection];
         } else {
-            printf("Received message from unknown client, serverID: %s\n", server->serverID.c_str());
+           // printf("Received message from unknown client, serverID: %s\n", server->serverID.c_str());
             fflush(stdout);
             return false;
         }
@@ -1428,15 +1428,15 @@ bool IEC104Server::RawMessageHandler(void* parameter, IMasterConnection connecti
                 break;
             }
            default:
-                printf("Received unsupported ASDU type: %s (%i), serverID: %s, clientId: %s, asduAddress: %d\n",
-                       TypeID_toString(typeID), typeID, server->serverID.c_str(), clientIdStr.c_str(), receivedAsduAddress);
+                // printf("Received unsupported ASDU type: %s (%i), serverID: %s, clientId: %s, asduAddress: %d\n",
+                //        TypeID_toString(typeID), typeID, server->serverID.c_str(), clientIdStr.c_str(), receivedAsduAddress);
                 fflush(stdout);
                 return false;
         }
       
      for (const auto& [ioa, val, quality, timestamp, bselCmd, ql] : elements) {
-            printf("ASDU type: %s, serverID: %s, clientId: %s, asduAddress: %d, ioa: %i, value: %f, quality: %u, timestamp: %" PRIu64 ", bselCmd: %d, ql: %d, cnt: %i\n",
-                   TypeID_toString(typeID), server->serverID.c_str(), clientIdStr.c_str(), receivedAsduAddress, ioa, val, quality, timestamp, bselCmd, ql, server->cnt);
+            // printf("ASDU type: %s, serverID: %s, clientId: %s, asduAddress: %d, ioa: %i, value: %f, quality: %u, timestamp: %" PRIu64 ", bselCmd: %d, ql: %d, cnt: %i\n",
+            //        TypeID_toString(typeID), server->serverID.c_str(), clientIdStr.c_str(), receivedAsduAddress, ioa, val, quality, timestamp, bselCmd, ql, server->cnt);
             fflush(stdout);
         }
 
@@ -1465,8 +1465,8 @@ bool IEC104Server::RawMessageHandler(void* parameter, IMasterConnection connecti
 
         return true;
     } catch (const std::exception& e) {
-        printf("Exception in RawMessageHandler: %s, serverID: %s, clientId: %s, asduAddress: %d\n",
-               e.what(), server->serverID.c_str(), clientIdStr.c_str(), receivedAsduAddress);
+        // printf("Exception in RawMessageHandler: %s, serverID: %s, clientId: %s, asduAddress: %d\n",
+        //        e.what(), server->serverID.c_str(), clientIdStr.c_str(), receivedAsduAddress);
         fflush(stdout);
         server->tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
             Napi::Object eventObj = Napi::Object::New(env);

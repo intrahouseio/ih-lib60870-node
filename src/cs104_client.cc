@@ -75,7 +75,7 @@ IEC104Client::IEC104Client(const Napi::CallbackInfo& info) : Napi::ObjectWrap<IE
             [](Napi::Env) {}
         );
     } catch (const std::exception& e) {
-        printf("Failed to create ThreadSafeFunction: %s\n", e.what());
+        //printf("Failed to create ThreadSafeFunction: %s\n", e.what());
         Napi::Error::New(info.Env(), string("TSFN creation failed: ") + e.what()).ThrowAsJavaScriptException();
     }
 }
@@ -85,7 +85,7 @@ IEC104Client::~IEC104Client() {
     if (running) {
         running = false;
         if (connected) {
-            printf("Destructor closing connection, clientID: %s\n", clientID.c_str());
+            //printf("Destructor closing connection, clientID: %s\n", clientID.c_str());
             CS104_Connection_destroy(connection);
             connected = false;
             activated = false;
@@ -154,7 +154,7 @@ Napi::Value IEC104Client::Connect(const Napi::CallbackInfo& info) {
     }
 
     try {
-        printf("Creating connection to %s:%d, clientID: %s\n", ip.c_str(), port, clientID.c_str());
+        //printf("Creating connection to %s:%d, clientID: %s\n", ip.c_str(), port, clientID.c_str());
         fflush(stdout);
         connection = CS104_Connection_create(ip.c_str(), port);
         if (!connection) {
@@ -176,8 +176,8 @@ Napi::Value IEC104Client::Connect(const Napi::CallbackInfo& info) {
         CS104_Connection_setConnectionHandler(connection, ConnectionHandler, this);
         CS104_Connection_setASDUReceivedHandler(connection, RawMessageHandler, this);
 
-        printf("Connecting with params: originatorAddress=%d, asduAddress=%d, k=%d, w=%d, t0=%d, t1=%d, t2=%d, t3=%d, reconnectDelay=%d, clientID: %s\n",
-               originatorAddress, asduAddress, k, w, t0, t1, t2, t3, reconnectDelay, clientID.c_str());
+        //printf("Connecting with params: originatorAddress=%d, asduAddress=%d, k=%d, w=%d, t0=%d, t1=%d, t2=%d, t3=%d, reconnectDelay=%d, clientID: %s\n",
+        //       originatorAddress, asduAddress, k, w, t0, t1, t2, t3, reconnectDelay, clientID.c_str());
         fflush(stdout);
 
         running = true;
@@ -191,8 +191,8 @@ Napi::Value IEC104Client::Connect(const Napi::CallbackInfo& info) {
         bool isPrimary = true;
 
         while (running) {
-            printf("Attempting to connect to %s:%d (attempt %d/%d), clientID: %s\n", 
-                   currentIp.c_str(), port, (isPrimary ? primaryRetryCount : reserveRetryCount) + 1, maxRetries, clientID.c_str());
+           // printf("Attempting to connect to %s:%d (attempt %d/%d), clientID: %s\n", 
+            //       currentIp.c_str(), port, (isPrimary ? primaryRetryCount : reserveRetryCount) + 1, maxRetries, clientID.c_str());
             fflush(stdout);
 
             // Создаем новое соединение
@@ -225,7 +225,7 @@ Napi::Value IEC104Client::Connect(const Napi::CallbackInfo& info) {
             }
 
             if (connectSuccess) {
-                printf("Connected successfully to %s:%d, clientID: %s\n", currentIp.c_str(), port, clientID.c_str());
+               // printf("Connected successfully to %s:%d, clientID: %s\n", currentIp.c_str(), port, clientID.c_str());
                 fflush(stdout);
                 primaryRetryCount = 0;
                 reserveRetryCount = 0;
@@ -239,16 +239,16 @@ Napi::Value IEC104Client::Connect(const Napi::CallbackInfo& info) {
 
                     // Проверка доступности основного IP, если используется резервный
                     if (!isPrimary && !ipReserve.empty()) {
-                        printf("Checking primary IP %s:%d availability, clientID: %s\n", ip.c_str(), port, clientID.c_str());
+                       // printf("Checking primary IP %s:%d availability, clientID: %s\n", ip.c_str(), port, clientID.c_str());
                         fflush(stdout);
                         CS104_Connection testConn = CS104_Connection_create(ip.c_str(), port);
                         if (testConn && CS104_Connection_connect(testConn)) {
-                            printf("Primary IP %s restored, switching back, clientID: %s\n", ip.c_str(), clientID.c_str());
+                           // printf("Primary IP %s restored, switching back, clientID: %s\n", ip.c_str(), clientID.c_str());
                             fflush(stdout);
                             CS104_Connection_destroy(testConn);
 
                             // Закрываем текущее соединение
-                            printf("Closing current connection to %s:%d, clientID: %s\n", currentIp.c_str(), port, clientID.c_str());
+                           // printf("Closing current connection to %s:%d, clientID: %s\n", currentIp.c_str(), port, clientID.c_str());
                             CS104_Connection_destroy(connection);
                             connection = nullptr;
 
@@ -263,14 +263,14 @@ Napi::Value IEC104Client::Connect(const Napi::CallbackInfo& info) {
                             primaryRetryCount = 0;
                             break; // Выходим из внутреннего цикла для создания нового соединения
                         } else {
-                            printf("Primary IP %s still unavailable, clientID: %s\n", ip.c_str(), clientID.c_str());
+                          //  printf("Primary IP %s still unavailable, clientID: %s\n", ip.c_str(), clientID.c_str());
                             CS104_Connection_destroy(testConn);
                             Thread_sleep(5000);
                         }
                     }
                 }
             } else {
-                printf("Connection failed to %s:%d, clientID: %s\n", currentIp.c_str(), port, clientID.c_str());
+               // printf("Connection failed to %s:%d, clientID: %s\n", currentIp.c_str(), port, clientID.c_str());
                 fflush(stdout);
                 tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
                     Napi::Object eventObj = Napi::Object::New(env);
@@ -299,29 +299,29 @@ Napi::Value IEC104Client::Connect(const Napi::CallbackInfo& info) {
                 // Логика переключения IP
                 if (isPrimary && primaryRetryCount >= maxRetries && !ipReserve.empty()) {
                     // Переключаемся на резервный IP после maxRetries попыток
-                    printf("Primary IP %s unresponsive after %d attempts, switching to reserve IP %s, clientID: %s\n", 
-                           ip.c_str(), maxRetries, ipReserve.c_str(), clientID.c_str());
+                   // printf("Primary IP %s unresponsive after %d attempts, switching to reserve IP %s, clientID: %s\n", 
+                     //      ip.c_str(), maxRetries, ipReserve.c_str(), clientID.c_str());
                     currentIp = ipReserve;
                     isPrimary = false;
                     primaryRetryCount = 0; // Сбрасываем счетчик для основного IP
                     reserveRetryCount = 0; // Сбрасываем счетчик для резервного IP
                 } else if (!isPrimary && reserveRetryCount >= maxRetries) {
                     // Возвращаемся к основному IP после maxRetries попыток на резервном
-                    printf("Reserve IP %s unresponsive after %d attempts, switching back to primary IP %s, clientID: %s\n", 
-                           ipReserve.c_str(), maxRetries, ip.c_str(), clientID.c_str());
+                  //  printf("Reserve IP %s unresponsive after %d attempts, switching back to primary IP %s, clientID: %s\n", 
+                    //       ipReserve.c_str(), maxRetries, ip.c_str(), clientID.c_str());
                     currentIp = ip;
                     isPrimary = true;
                     reserveRetryCount = 0; // Сбрасываем счетчик для резервного IP
                     primaryRetryCount = 0; // Сбрасываем счетчик для основного IP (для бесконечных попыток)
                 }
 
-                printf("Reconnection attempt failed, retrying in %d seconds, clientID: %s\n", reconnectDelay, clientID.c_str());
+               // printf("Reconnection attempt failed, retrying in %d seconds, clientID: %s\n", reconnectDelay, clientID.c_str());
                 Thread_sleep(reconnectDelay * 1000);
             }
 
             // Проверяем, завершена ли работа потока
             if (!running && connected) {
-                printf("Thread stopped by client, closing connection, clientID: %s\n", clientID.c_str());
+               // printf("Thread stopped by client, closing connection, clientID: %s\n", clientID.c_str());
                 CS104_Connection_destroy(connection);
                 connected = false;
                 activated = false;
@@ -329,7 +329,7 @@ Napi::Value IEC104Client::Connect(const Napi::CallbackInfo& info) {
             }
         }
     } catch (const std::exception& e) {
-        printf("Exception in connection thread: %s, clientID: %s\n", e.what(), clientID.c_str());
+       // printf("Exception in connection thread: %s, clientID: %s\n", e.what(), clientID.c_str());
         fflush(stdout);
         std::lock_guard<std::mutex> lock(this->connMutex);
         running = false;
@@ -352,7 +352,7 @@ Napi::Value IEC104Client::Connect(const Napi::CallbackInfo& info) {
 
         return env.Undefined();
     } catch (const std::exception& e) {
-        printf("Exception in Connect: %s, clientID: %s\n", e.what(), clientID.c_str());
+       // printf("Exception in Connect: %s, clientID: %s\n", e.what(), clientID.c_str());
         Napi::Error::New(env, string("Connect failed: ") + e.what()).ThrowAsJavaScriptException();
         return env.Undefined();
     }
@@ -365,7 +365,7 @@ Napi::Value IEC104Client::Disconnect(const Napi::CallbackInfo& info) {
         if (running) {
             running = false;
             if (connected) {
-                printf("Disconnect called by client, clientID: %s\n", clientID.c_str());
+              //  printf("Disconnect called by client, clientID: %s\n", clientID.c_str());
                 CS104_Connection_destroy(connection);
                 connected = false;
                 activated = false;
@@ -394,7 +394,7 @@ Napi::Value IEC104Client::SendStartDT(const Napi::CallbackInfo& info) {
         CS104_Connection_sendStartDT(connection);
         return Napi::Boolean::New(env, true);
     } catch (const std::exception& e) {
-        printf("Exception in SendStartDT: %s, clientID: %s\n", e.what(), clientID.c_str());
+      //  printf("Exception in SendStartDT: %s, clientID: %s\n", e.what(), clientID.c_str());
         Napi::Error::New(env, string("SendStartDT failed: ") + e.what()).ThrowAsJavaScriptException();
         return Napi::Boolean::New(env, false);
     }
@@ -411,7 +411,7 @@ Napi::Value IEC104Client::SendStopDT(const Napi::CallbackInfo& info) {
         CS104_Connection_sendStopDT(connection);
         return Napi::Boolean::New(env, true);
     } catch (const std::exception& e) {
-        printf("Exception in SendStopDT: %s, clientID: %s\n", e.what(), clientID.c_str());
+       // printf("Exception in SendStopDT: %s, clientID: %s\n", e.what(), clientID.c_str());
         Napi::Error::New(env, string("SendStopDT failed: ") + e.what()).ThrowAsJavaScriptException();
         return Napi::Boolean::New(env, false);
     }
@@ -746,8 +746,8 @@ Napi::Value IEC104Client::SendCommands(const Napi::CallbackInfo& info) {
                         };
                         CS101_ASDU_setNumberOfElements(asdu, 1); // Устанавливаем NumIx=1
                         CS101_ASDU_addPayload(asdu, payload, sizeof(payload));
-                        printf("Sending F_SC_NA_1: IOA=%d, SCQ=%d, NOF=%u, COT=%d, clientID: %s\n",
-                            ioa, scq, value, cot, clientID.c_str());
+                      //  printf("Sending F_SC_NA_1: IOA=%d, SCQ=%d, NOF=%u, COT=%d, clientID: %s\n",
+                      //      ioa, scq, value, cot, clientID.c_str());
                         success = CS104_Connection_sendASDU(connection, asdu);
                     } 
                     else if (scq == 1 || scq == 2 || scq == 6) {
@@ -768,12 +768,12 @@ Napi::Value IEC104Client::SendCommands(const Napi::CallbackInfo& info) {
                         };
                         CS101_ASDU_setNumberOfElements(asdu, 1); // Устанавливаем NumIx=1
                         CS101_ASDU_addPayload(asdu, payload, sizeof(payload));
-                        printf("F_SC_NA_1 ASDU: TypeID=%d, COT=%d, OA=%d, ASDUAddr=%d, NumIx=%d, Payload: ", 
-                            CS101_ASDU_getTypeID(asdu), cot, 0, asduAddress, CS101_ASDU_getNumberOfElements(asdu));
+                     //   printf("F_SC_NA_1 ASDU: TypeID=%d, COT=%d, OA=%d, ASDUAddr=%d, NumIx=%d, Payload: ", 
+                     //       CS101_ASDU_getTypeID(asdu), cot, 0, asduAddress, CS101_ASDU_getNumberOfElements(asdu));
                         for (unsigned long i = 0; i < sizeof(payload); i++) {
-                            printf("%02x ", payload[i]);
+                       //     printf("%02x ", payload[i]);
                         }
-                        printf("\n");
+                       // printf("\n");
                         success = CS104_Connection_sendASDU(connection, asdu);
                     }
                     else {
@@ -802,8 +802,8 @@ Napi::Value IEC104Client::SendCommands(const Napi::CallbackInfo& info) {
                     };
                     CS101_ASDU_setNumberOfElements(asdu, 1);
                     CS101_ASDU_addPayload(asdu, payload, sizeof(payload));
-                    printf("Sending F_AF_NA_1: IOA=%d, NOF=%u, LOS=1, CHKS=1, COT=%d, clientID: %s\n",
-                        ioa, nof, cot, clientID.c_str());
+                  //  printf("Sending F_AF_NA_1: IOA=%d, NOF=%u, LOS=1, CHKS=1, COT=%d, clientID: %s\n",
+                  //      ioa, nof, cot, clientID.c_str());
                     success = CS104_Connection_sendASDU(connection, asdu);
                     break;
                 }
@@ -813,14 +813,14 @@ Napi::Value IEC104Client::SendCommands(const Napi::CallbackInfo& info) {
 
             if (!success) {
                 allSuccess = false;
-                printf("Failed to send command: typeId=%d, ioa=%d, clientID: %s, isPrimaryIP=%d\n", typeId, ioa, clientID.c_str(), usingPrimaryIp);
+            //    printf("Failed to send command: typeId=%d, ioa=%d, clientID: %s, isPrimaryIP=%d\n", typeId, ioa, clientID.c_str(), usingPrimaryIp);
             } else {
-                printf("Sent command: typeId=%d, ioa=%d, bselCmd=%d, ql=%d, clientID: %s, isPrimaryIP=%d\n", typeId, ioa, bselCmd, ql, clientID.c_str(), usingPrimaryIp);
+             //   printf("Sent command: typeId=%d, ioa=%d, bselCmd=%d, ql=%d, clientID: %s, isPrimaryIP=%d\n", typeId, ioa, bselCmd, ql, clientID.c_str(), usingPrimaryIp);
             }
         } // Закрытие for
         return Napi::Boolean::New(env, allSuccess);
     } catch (const std::exception& e) {
-        printf("Exception in SendCommands: %s, clientID: %s, isPrimaryIP=%d\n", e.what(), clientID.c_str(), usingPrimaryIp);
+        //printf("Exception in SendCommands: %s, clientID: %s, isPrimaryIP=%d\n", e.what(), clientID.c_str(), usingPrimaryIp);
         Napi::Error::New(env, string("SendCommands failed: ") + e.what()).ThrowAsJavaScriptException();
 
         // Добавляем isPrimaryIP в объект события
@@ -857,22 +857,23 @@ Napi::Value IEC104Client::RequestFileList(const Napi::CallbackInfo& info) {
                     0x00,  // SCQ = 0
                     0x04, 0x00};  // NOF = 4 (little-endian)
         CS101_ASDU_addPayload(asdu, payload, sizeof(payload));
-        printf("Sending F_SC_NA_1 for file list: payload=");
-        for (unsigned long i = 0; i < sizeof(payload); i++) printf("%02x ", payload[i]);
-        printf("\n");
+       // printf("Sending F_SC_NA_1 for file list: payload=");
+        for (unsigned long i = 0; i < sizeof(payload); i++) {}
+        //printf("%02x ", payload[i]);
+        //printf("\n");
         bool success = CS104_Connection_sendASDU(connection, asdu);
         CS101_ASDU_destroy(asdu);
 
         if (!success) {
-            printf("Failed to send file list request, clientID: %s\n", clientID.c_str());
+            //printf("Failed to send file list request, clientID: %s\n", clientID.c_str());
             Napi::Error::New(env, "Failed to send file list request").ThrowAsJavaScriptException();
             return Napi::Boolean::New(env, false);
         }
 
-        printf("File list request sent (F_SC_NA_1, COT=5, NOF=4), expecting F_DR (126, COT=5) response, clientID: %s\n", clientID.c_str());
+        //printf("File list request sent (F_SC_NA_1, COT=5, NOF=4), expecting F_DR (126, COT=5) response, clientID: %s\n", clientID.c_str());
         return Napi::Boolean::New(env, true);
     } catch (const std::exception& e) {
-        printf("Exception in RequestFileList: %s, clientID: %s\n", e.what(), clientID.c_str());
+        //printf("Exception in RequestFileList: %s, clientID: %s\n", e.what(), clientID.c_str());
         Napi::Error::New(env, string("RequestFileList failed: ") + e.what()).ThrowAsJavaScriptException();
         return Napi::Boolean::New(env, false);
     }
@@ -918,15 +919,15 @@ Napi::Value IEC104Client::SelectFile(const Napi::CallbackInfo& info) {
         CS101_ASDU_destroy(asdu);
 
         if (!success) {
-            printf("Failed to select file %s (NOF=%u, oscnum=%u), clientID: %s\n", fileName.c_str(), nof, oscnum, clientID.c_str());
+           // printf("Failed to select file %s (NOF=%u, oscnum=%u), clientID: %s\n", fileName.c_str(), nof, oscnum, clientID.c_str());
             Napi::Error::New(env, "Failed to select file").ThrowAsJavaScriptException();
             return Napi::Boolean::New(env, false);
         }
 
-        printf("File selected (F_SC_NA_1, COT=13, SCQ=1, NOF=%u, oscnum=%u), clientID: %s\n", nof, oscnum, clientID.c_str());
+      //  printf("File selected (F_SC_NA_1, COT=13, SCQ=1, NOF=%u, oscnum=%u), clientID: %s\n", nof, oscnum, clientID.c_str());
         return Napi::Boolean::New(env, true);
     } catch (const std::exception& e) {
-        printf("Exception in SelectFile: %s, clientID: %s\n", e.what(), clientID.c_str());
+      //  printf("Exception in SelectFile: %s, clientID: %s\n", e.what(), clientID.c_str());
         Napi::Error::New(env, string("SelectFile failed: ") + e.what()).ThrowAsJavaScriptException();
         return Napi::Boolean::New(env, false);
     }
@@ -953,15 +954,15 @@ Napi::Value IEC104Client::OpenFile(const Napi::CallbackInfo& info) {
         CS101_ASDU_destroy(asdu);
 
         if (!success) {
-            printf("Failed to open file, clientID: %s\n", clientID.c_str());
+           // printf("Failed to open file, clientID: %s\n", clientID.c_str());
             Napi::Error::New(env, "Failed to open file").ThrowAsJavaScriptException();
             return Napi::Boolean::New(env, false);
         }
 
-        printf("File opened (F_SC_NA_1, COT=13, SCQ=2), clientID: %s\n", clientID.c_str());
+       // printf("File opened (F_SC_NA_1, COT=13, SCQ=2), clientID: %s\n", clientID.c_str());
         return Napi::Boolean::New(env, true);
     } catch (const std::exception& e) {
-        printf("Exception in OpenFile: %s, clientID: %s\n", e.what(), clientID.c_str());
+      //  printf("Exception in OpenFile: %s, clientID: %s\n", e.what(), clientID.c_str());
         Napi::Error::New(env, string("OpenFile failed: ") + e.what()).ThrowAsJavaScriptException();
         return Napi::Boolean::New(env, false);
     }
@@ -988,15 +989,15 @@ Napi::Value IEC104Client::RequestFileSegment(const Napi::CallbackInfo& info) {
         CS101_ASDU_destroy(asdu);
 
         if (!success) {
-            printf("Failed to request file segment, clientID: %s\n", clientID.c_str());
+          //  printf("Failed to request file segment, clientID: %s\n", clientID.c_str());
             Napi::Error::New(env, "Failed to request file segment").ThrowAsJavaScriptException();
             return Napi::Boolean::New(env, false);
         }
 
-        printf("File segment requested (F_SC_NA_1, COT=13, SCQ=6), clientID: %s\n", clientID.c_str());
+      //  printf("File segment requested (F_SC_NA_1, COT=13, SCQ=6), clientID: %s\n", clientID.c_str());
         return Napi::Boolean::New(env, true);
     } catch (const std::exception& e) {
-        printf("Exception in RequestFileSegment: %s, clientID: %s\n", e.what(), clientID.c_str());
+     //   printf("Exception in RequestFileSegment: %s, clientID: %s\n", e.what(), clientID.c_str());
         Napi::Error::New(env, string("RequestFileSegment failed: ") + e.what()).ThrowAsJavaScriptException();
         return Napi::Boolean::New(env, false);
     }
@@ -1029,15 +1030,15 @@ Napi::Value IEC104Client::ConfirmFileTransfer(const Napi::CallbackInfo& info) {
         CS101_ASDU_destroy(asdu);
 
         if (!success) {
-            printf("Failed to confirm file transfer for IOA=%d, clientID: %s\n", ioa, clientID.c_str());
+         //   printf("Failed to confirm file transfer for IOA=%d, clientID: %s\n", ioa, clientID.c_str());
             Napi::Error::New(env, "Failed to confirm file transfer").ThrowAsJavaScriptException();
             return Napi::Boolean::New(env, false);
         }
 
-        printf("File transfer confirmed (F_AF_NA_1, IOA=%d), clientID: %s\n", ioa, clientID.c_str());
+     //   printf("File transfer confirmed (F_AF_NA_1, IOA=%d), clientID: %s\n", ioa, clientID.c_str());
         return Napi::Boolean::New(env, true);
     } catch (const std::exception& e) {
-        printf("Exception in ConfirmFileTransfer: %s, clientID: %s\n", e.what(), clientID.c_str());
+      //  printf("Exception in ConfirmFileTransfer: %s, clientID: %s\n", e.what(), clientID.c_str());
         Napi::Error::New(env, string("ConfirmFileTransfer failed: ") + e.what()).ThrowAsJavaScriptException();
         return Napi::Boolean::New(env, false);
     }
@@ -1086,7 +1087,7 @@ void IEC104Client::ConnectionHandler(void* parameter, CS104_Connection con, CS10
         }
     }
 
-    printf("Connection event: %s, reason: %s, clientID: %s\n", eventStr.c_str(), reason.c_str(), client->clientID.c_str());
+   // printf("Connection event: %s, reason: %s, clientID: %s\n", eventStr.c_str(), reason.c_str(), client->clientID.c_str());
 
     client->tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
         Napi::Object eventObj = Napi::Object::New(env);
@@ -1108,8 +1109,8 @@ void IEC104Client::ConnectionHandler(void* parameter, CS104_Connection con, CS10
         int receivedAsduAddress = CS101_ASDU_getCA(asdu);
         bool isPrimaryIP = client->usingPrimaryIp;
 
-        printf("Received ASDU: TypeID=%d, COT=%d, ASDUAddr=%d, Elements=%d, clientID: %s\n", 
-            typeID, cot, receivedAsduAddress, numberOfElements, client->clientID.c_str());
+       // printf("Received ASDU: TypeID=%d, COT=%d, ASDUAddr=%d, Elements=%d, clientID: %s\n", 
+        //    typeID, cot, receivedAsduAddress, numberOfElements, client->clientID.c_str());
 
         try {
             // Логика для данных мониторинга (M_ types)
@@ -1355,8 +1356,8 @@ void IEC104Client::ConnectionHandler(void* parameter, CS104_Connection con, CS10
                             
                             elements.emplace_back(ioa, static_cast<double>(val), static_cast<uint8_t>(quality), timestamp);
                             
-                            printf("M_EP_TD_1: IOA=%d, State=%u, Quality=%u, Timestamp=%" PRIu64 ", clientID: %s\n",
-                                ioa, val, quality, timestamp, client->clientID.c_str());
+                          //  printf("M_EP_TD_1: IOA=%d, State=%u, Quality=%u, Timestamp=%" PRIu64 ", clientID: %s\n",
+                          //      ioa, val, quality, timestamp, client->clientID.c_str());
                             
                             EventOfProtectionEquipmentWithCP56Time2a_destroy(io);
                         }
@@ -1375,8 +1376,8 @@ void IEC104Client::ConnectionHandler(void* parameter, CS104_Connection con, CS10
                             
                             elements.emplace_back(ioa, static_cast<double>(val), quality, timestamp);
                             
-                            printf("M_EP_TE_1: IOA=%d, State=%u, Quality=%u, Timestamp=%" PRIu64 ", clientID: %s\n",
-                                ioa, val, quality, timestamp, client->clientID.c_str());
+                          //  printf("M_EP_TE_1: IOA=%d, State=%u, Quality=%u, Timestamp=%" PRIu64 ", clientID: %s\n",
+                           //     ioa, val, quality, timestamp, client->clientID.c_str());
                             
                             PackedStartEventsOfProtectionEquipmentWithCP56Time2a_destroy(io);
                         }
@@ -1396,8 +1397,8 @@ void IEC104Client::ConnectionHandler(void* parameter, CS104_Connection con, CS10
                             
                             elements.emplace_back(ioa, static_cast<double>(val), quality, timestamp);
                             
-                            printf("M_EP_TF_1: IOA=%d, State=%u, Quality=%u, Timestamp=%" PRIu64 ", clientID: %s\n",
-                                ioa, val, quality, timestamp, client->clientID.c_str());
+                            // printf("M_EP_TF_1: IOA=%d, State=%u, Quality=%u, Timestamp=%" PRIu64 ", clientID: %s\n",
+                            //     ioa, val, quality, timestamp, client->clientID.c_str());
                             
                             PackedOutputCircuitInfoWithCP56Time2a_destroy(io);
                         }
@@ -1416,12 +1417,12 @@ void IEC104Client::ConnectionHandler(void* parameter, CS104_Connection con, CS10
     // Пропускаем первые 3 байта (IOA)
     offset += 3;
 
-    printf("Parsing F_DR_TA_1: NumIx=%d, PayloadSize=%d, RawPayload=", 
-           numberOfElements, payloadSize);
+    // printf("Parsing F_DR_TA_1: NumIx=%d, PayloadSize=%d, RawPayload=", 
+    //        numberOfElements, payloadSize);
     for (int i = 0; i < payloadSize; i++) {
-        printf("%02x ", rawData[i]);
+    //    printf("%02x ", rawData[i]);
     }
-    printf("\n");
+   // printf("\n");
 
     for (int elem = 0; elem < numberOfElements && offset + 13 <= payloadSize; elem++) {
         // Извлекаем NOF (2 байта, little-endian)
@@ -1469,8 +1470,8 @@ void IEC104Client::ConnectionHandler(void* parameter, CS104_Connection con, CS10
         // Сохраняем в fileList
         client->fileList.emplace(nof, FileInfo{std::string(fileName), fileSize, msTimestamp});
 
-       printf("Parsed F_DR_TA_1 Element %d/%d: fileName=%s, NOF=%u, oscnum=%u, size=%u, timestampRaw=0x%016" PRIx64 ", timestamp=%s, ms=%llu, min=%u, hour=%u, day=%u, mon=%u, year=%u, clientID: %s\n",
-       elem + 1, numberOfElements, fileName, nof, oscnum, fileSize, timestampRaw, timeStr, ms, minute, hour, day, month, year, client->clientID.c_str());
+       //printf("Parsed F_DR_TA_1 Element %d/%d: fileName=%s, NOF=%u, oscnum=%u, size=%u, timestampRaw=0x%016" PRIx64 ", timestamp=%s, ms=%llu, min=%u, hour=%u, day=%u, mon=%u, year=%u, clientID: %s\n",
+      // elem + 1, numberOfElements, fileName, nof, oscnum, fileSize, timestampRaw, timeStr, ms, minute, hour, day, month, year, client->clientID.c_str());
 
         // Отправляем данные в JavaScript
         client->tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
@@ -1486,28 +1487,28 @@ void IEC104Client::ConnectionHandler(void* parameter, CS104_Connection con, CS10
                 std::vector<napi_value> args = {Napi::String::New(env, "data"), eventObj};
                 jsCallback.Call(args);
             } catch (const Napi::Error& e) {
-                printf("N-API callback error in F_DR_TA_1: %s, clientID: %s\n", e.what(), client->clientID.c_str());
+                //printf("N-API callback error in F_DR_TA_1: %s, clientID: %s\n", e.what(), client->clientID.c_str());
             }
         });
     }
 
     if (offset < payloadSize) {
-        printf("Warning: %d bytes remaining in F_DR_TA_1 payload after parsing %d elements, clientID: %s\n",
-               payloadSize - offset, numberOfElements, client->clientID.c_str());
+        // printf("Warning: %d bytes remaining in F_DR_TA_1 payload after parsing %d elements, clientID: %s\n",
+        //        payloadSize - offset, numberOfElements, client->clientID.c_str());
     }
     break;
 }
             
             case F_FR_NA_1: { // File Ready (TypeID = 120)
                 if (!asdu || numberOfElements < 1) {
-                    printf("Invalid ASDU or no elements for F_FR_NA_1, COT=%d, clientID: %s\n", cot, client->clientID.c_str());
+                   // printf("Invalid ASDU or no elements for F_FR_NA_1, COT=%d, clientID: %s\n", cot, client->clientID.c_str());
                     return false;
                 }
 
                 for (int i = 0; i < numberOfElements; i++) {
                     FileReady io = (FileReady)CS101_ASDU_getElement(asdu, i);
                     if (!io) {
-                        printf("Failed to get element %d for F_FR_NA_1, clientID: %s\n", i, client->clientID.c_str());
+                       // printf("Failed to get element %d for F_FR_NA_1, clientID: %s\n", i, client->clientID.c_str());
                         continue;
                     }
 
@@ -1518,8 +1519,8 @@ void IEC104Client::ConnectionHandler(void* parameter, CS104_Connection con, CS10
 
                     // Проверка COT
                     if (cot != 7 && cot != 13) { // Ожидаем COT=7 или COT=13
-                        printf("F_FR_NA_1 with unexpected COT=%d (expected 7 or 13), IOA=%d, NOF=%u, FRQ=%u, File=%s, clientID: %s\n", 
-                            cot, ioa, nof, frq, fileName.c_str(), client->clientID.c_str());
+                        //printf("F_FR_NA_1 with unexpected COT=%d (expected 7 or 13), IOA=%d, NOF=%u, FRQ=%u, File=%s, clientID: %s\n", 
+                         //   cot, ioa, nof, frq, fileName.c_str(), client->clientID.c_str());
                         if (cot == CS101_COT_UNKNOWN_COT) { // COT=47
                             client->tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
                                 Napi::Object errorObj = Napi::Object::New(env);
@@ -1538,8 +1539,8 @@ void IEC104Client::ConnectionHandler(void* parameter, CS104_Connection con, CS10
 
                     // Обработка FRQ
                     if (frq != 0 && frq != 5 && frq != 92) {
-                        printf("F_FR_NA_1 with unexpected FRQ=%u (expected 0, 5, or 92), IOA=%d, NOF=%u, File=%s, clientID: %s\n", 
-                            frq, ioa, nof, fileName.c_str(), client->clientID.c_str());
+                        // printf("F_FR_NA_1 with unexpected FRQ=%u (expected 0, 5, or 92), IOA=%d, NOF=%u, File=%s, clientID: %s\n", 
+                        //     frq, ioa, nof, fileName.c_str(), client->clientID.c_str());
                         client->tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
                             Napi::Object errorObj = Napi::Object::New(env);
                             errorObj.Set("clientID", Napi::String::New(env, client->clientID.c_str()));
@@ -1555,8 +1556,8 @@ void IEC104Client::ConnectionHandler(void* parameter, CS104_Connection con, CS10
                         continue; // Continue to allow processing of other elements
                     }
 
-                    printf("File ready (F_FR_NA_1, COT=%d) for IOA=%d, NOF=%u, FRQ=%u, File=%s, clientID: %s\n", 
-                        cot, ioa, nof, frq, fileName.c_str(), client->clientID.c_str());
+                    // printf("File ready (F_FR_NA_1, COT=%d) for IOA=%d, NOF=%u, FRQ=%u, File=%s, clientID: %s\n", 
+                    //     cot, ioa, nof, frq, fileName.c_str(), client->clientID.c_str());
 
                     client->currentNOF = nof;
 
@@ -1584,8 +1585,8 @@ void IEC104Client::ConnectionHandler(void* parameter, CS104_Connection con, CS10
                 int ioa = InformationObject_getObjectAddress((InformationObject)io);
                 uint16_t nos = FileSegment_getNOF(io);
                 std::string fileName = client->getFileNameByNOF(nos); // Используем NOS как NOF
-                printf("Section ready (F_SR_NA_1) for IOA=%d, NOS=%u, File=%s, clientID: %s\n", 
-                    ioa, nos, fileName.c_str(), client->clientID.c_str());
+                // printf("Section ready (F_SR_NA_1) for IOA=%d, NOS=%u, File=%s, clientID: %s\n", 
+                //     ioa, nos, fileName.c_str(), client->clientID.c_str());
 
                 client->tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
                     Napi::Object eventObj = Napi::Object::New(env);
@@ -1612,8 +1613,8 @@ void IEC104Client::ConnectionHandler(void* parameter, CS104_Connection con, CS10
                 uint8_t length = FileSegment_getLengthOfSegment(io);
                 uint16_t nos = FileSegment_getNOF(io); // Используем NOS как NOF
                 std::string fileName = client->getFileNameByNOF(nos);
-                printf("Received file segment (F_SG_NA_1) for IOA=%d, Length=%u, NOS=%u, File=%s, clientID: %s\n", 
-                    ioa, length, nos, fileName.c_str(), client->clientID.c_str());
+                // printf("Received file segment (F_SG_NA_1) for IOA=%d, Length=%u, NOS=%u, File=%s, clientID: %s\n", 
+                //     ioa, length, nos, fileName.c_str(), client->clientID.c_str());
 
                 client->tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
                     Napi::Object eventObj = Napi::Object::New(env);
@@ -1643,8 +1644,8 @@ void IEC104Client::ConnectionHandler(void* parameter, CS104_Connection con, CS10
                     nof = rawData[3] | (rawData[4] << 8); // NOF в little-endian
                 }
                 std::string fileName = client->getFileNameByNOF(nof);
-                printf("End of section (F_LS_NA_1) for IOA=%d, NOF=%u, File=%s, clientID: %s\n", 
-                    ioa, nof, fileName.c_str(), client->clientID.c_str());
+                // printf("End of section (F_LS_NA_1) for IOA=%d, NOF=%u, File=%s, clientID: %s\n", 
+                //     ioa, nof, fileName.c_str(), client->clientID.c_str());
 
                 client->tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
                     Napi::Object eventObj = Napi::Object::New(env);
@@ -1668,8 +1669,8 @@ void IEC104Client::ConnectionHandler(void* parameter, CS104_Connection con, CS10
                         if (io) {
                             int ioa = InformationObject_getObjectAddress((InformationObject)io);
                             uint16_t nof = FileACK_getNOF(io);
-                            printf("File transfer acknowledged (F_AF_NA_1) for IOA=%d, NOF=%u, clientID: %s\n", 
-                                ioa, nof, client->clientID.c_str());
+                            // printf("File transfer acknowledged (F_AF_NA_1) for IOA=%d, NOF=%u, clientID: %s\n", 
+                            //     ioa, nof, client->clientID.c_str());
                             FileACK_destroy(io);
                         }
                     }
@@ -1677,22 +1678,22 @@ void IEC104Client::ConnectionHandler(void* parameter, CS104_Connection con, CS10
                 }
 
                 default:
-                    printf("Received unsupported ASDU type: %s (%i), clientID: %s\n", TypeID_toString(typeID), typeID, client->clientID.c_str());
+                   // printf("Received unsupported ASDU type: %s (%i), clientID: %s\n", TypeID_toString(typeID), typeID, client->clientID.c_str());
                     int payloadSize = CS101_ASDU_getPayloadSize(asdu);
                     uint8_t* payload = CS101_ASDU_getPayload(asdu);
-                    printf("Raw payload (size=%d): ", payloadSize);
+                   // printf("Raw payload (size=%d): ", payloadSize);
                     for (int i = 0; i < payloadSize; i++) {
-                        printf("%02x ", payload[i]);
+                  //      printf("%02x ", payload[i]);
                     }
-                    printf("\n");
+                  //  printf("\n");
                     return true;
             }
 
             // Обработка данных мониторинга (M_ types), если есть элементы
             if (!elements.empty()) {
                 for (const auto& [ioa, val, quality, timestamp] : elements) {
-                    printf("ASDU type: %s, clientID: %s, asduAddress: %d, ioa: %i, value: %f, quality: %u, timestamp: %" PRIu64 ", cnt: %i\n", 
-                        TypeID_toString(typeID), client->clientID.c_str(), receivedAsduAddress, ioa, val, quality, timestamp, client->cnt);
+                    // printf("ASDU type: %s, clientID: %s, asduAddress: %d, ioa: %i, value: %f, quality: %u, timestamp: %" PRIu64 ", cnt: %i\n", 
+                    //     TypeID_toString(typeID), client->clientID.c_str(), receivedAsduAddress, ioa, val, quality, timestamp, client->cnt);
                 }
 
                 client->tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
@@ -1720,7 +1721,7 @@ void IEC104Client::ConnectionHandler(void* parameter, CS104_Connection con, CS10
             return true;
 
         } catch (const std::exception& e) {
-            printf("Exception in RawMessageHandler: %s, clientID: %s\n", e.what(), client->clientID.c_str());
+           // printf("Exception in RawMessageHandler: %s, clientID: %s\n", e.what(), client->clientID.c_str());
             client->tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
                 Napi::Object eventObj = Napi::Object::New(env);
                 eventObj.Set("clientID", Napi::String::New(env, client->clientID.c_str()));
