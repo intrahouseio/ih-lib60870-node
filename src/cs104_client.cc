@@ -407,7 +407,7 @@ Napi::Value IEC104Client::SendStartDT(const Napi::CallbackInfo &info)
 {
     Napi::Env env = info.Env();
     std::lock_guard<std::mutex> lock(this->connMutex);
-    if (!connected)
+    if (!connected || !connection)
     {
         Napi::Error::New(env, "Not connected").ThrowAsJavaScriptException();
         return env.Undefined();
@@ -429,7 +429,7 @@ Napi::Value IEC104Client::SendStopDT(const Napi::CallbackInfo &info)
 {
     Napi::Env env = info.Env();
     std::lock_guard<std::mutex> lock(this->connMutex);
-    if (!connected || !activated)
+    if (!connected || !activated || !connection)
     {
         Napi::Error::New(env, "Not connected or not activated").ThrowAsJavaScriptException();
         return env.Undefined();
@@ -460,7 +460,7 @@ Napi::Value IEC104Client::SendCommands(const Napi::CallbackInfo &info)
     Napi::Array commands = info[0].As<Napi::Array>();
 
     std::lock_guard<std::mutex> lock(this->connMutex);
-    if (!connected || !activated)
+    if (!connected || !activated || !connection)
     {
         Napi::Error::New(env, "Not connected or not activated").ThrowAsJavaScriptException();
         return env.Undefined();
