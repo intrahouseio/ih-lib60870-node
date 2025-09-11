@@ -168,7 +168,7 @@ Napi::Value IEC104Client::Connect(const Napi::CallbackInfo &info)
     try
     {
         // printf("Creating connection to %s:%d, clientID: %s\n", ip.c_str(), port, clientID.c_str());
-        fflush(stdout);
+        //fflush(stdout);
         connection = CS104_Connection_create(ip.c_str(), port);
         if (!connection)
         {
@@ -192,7 +192,7 @@ Napi::Value IEC104Client::Connect(const Napi::CallbackInfo &info)
 
         // printf("Connecting with params: originatorAddress=%d, asduAddress=%d, k=%d, w=%d, t0=%d, t1=%d, t2=%d, t3=%d, reconnectDelay=%d, clientID: %s\n",
         //        originatorAddress, asduAddress, k, w, t0, t1, t2, t3, reconnectDelay, clientID.c_str());
-        fflush(stdout);
+        //fflush(stdout);
 
         running = true;
         usingPrimaryIp = true;
@@ -208,7 +208,7 @@ Napi::Value IEC104Client::Connect(const Napi::CallbackInfo &info)
         while (running) {
            // printf("Attempting to connect to %s:%d (attempt %d/%d), clientID: %s\n", 
             //       currentIp.c_str(), port, (isPrimary ? primaryRetryCount : reserveRetryCount) + 1, maxRetries, clientID.c_str());
-            fflush(stdout);
+            //fflush(stdout);
 
             // Создаем новое соединение
             connection = CS104_Connection_create(currentIp.c_str(), port);
@@ -241,7 +241,7 @@ Napi::Value IEC104Client::Connect(const Napi::CallbackInfo &info)
 
             if (connectSuccess) {
                // printf("Connected successfully to %s:%d, clientID: %s\n", currentIp.c_str(), port, clientID.c_str());
-                fflush(stdout);
+                //fflush(stdout);
                 primaryRetryCount = 0;
                 reserveRetryCount = 0;
 
@@ -255,11 +255,11 @@ Napi::Value IEC104Client::Connect(const Napi::CallbackInfo &info)
                     // Проверка доступности основного IP, если используется резервный
                     if (!isPrimary && !ipReserve.empty()) {
                        // printf("Checking primary IP %s:%d availability, clientID: %s\n", ip.c_str(), port, clientID.c_str());
-                        fflush(stdout);
+                        //fflush(stdout);
                         CS104_Connection testConn = CS104_Connection_create(ip.c_str(), port);
                         if (testConn && CS104_Connection_connect(testConn)) {
                            // printf("Primary IP %s restored, switching back, clientID: %s\n", ip.c_str(), clientID.c_str());
-                            fflush(stdout);
+                            //fflush(stdout);
                             CS104_Connection_destroy(testConn);
 
                             // Закрываем текущее соединение
@@ -285,8 +285,8 @@ Napi::Value IEC104Client::Connect(const Napi::CallbackInfo &info)
                     }
                 }
             } else {
-               // printf("Connection failed to %s:%d, clientID: %s\n", currentIp.c_str(), port, clientID.c_str());
-                fflush(stdout);
+                //printf("Connection failed to %s:%d, clientID: %s\n", currentIp.c_str(), port, clientID.c_str());
+                //fflush(stdout);
                 tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback) {
                     Napi::Object eventObj = Napi::Object::New(env);
                     eventObj.Set("clientID", Napi::String::New(env, clientID.c_str()));
@@ -294,7 +294,7 @@ Napi::Value IEC104Client::Connect(const Napi::CallbackInfo &info)
                     eventObj.Set("event", Napi::String::New(env, "reconnecting"));
                     eventObj.Set("reason", Napi::String::New(env, string("attempt ") + to_string((isPrimary ? primaryRetryCount : reserveRetryCount) + 1) + " to " + currentIp));
                     eventObj.Set("isPrimaryIP", Napi::Boolean::New(env, isPrimary));
-                    std::vector<napi_value> args = {Napi::String::New(env, "data"), eventObj};
+                    std::vector<napi_value> args = {Napi::String::New(env, "conn"), eventObj};
                     jsCallback.Call(args);
                 });
             }
@@ -345,7 +345,7 @@ Napi::Value IEC104Client::Connect(const Napi::CallbackInfo &info)
         }
     } catch (const std::exception& e) {
        // printf("Exception in connection thread: %s, clientID: %s\n", e.what(), clientID.c_str());
-        fflush(stdout);
+        //fflush(stdout);
         std::lock_guard<std::mutex> lock(this->connMutex);
         running = false;
         if (connected) {
@@ -359,7 +359,7 @@ Napi::Value IEC104Client::Connect(const Napi::CallbackInfo &info)
             eventObj.Set("type", Napi::String::New(env, "control"));
             eventObj.Set("event", Napi::String::New(env, "error"));
             eventObj.Set("reason", Napi::String::New(env, string("Thread exception: ") + e.what()));
-            std::vector<napi_value> args = {Napi::String::New(env, "data"), eventObj};
+            std::vector<napi_value> args = {Napi::String::New(env, "conn"), eventObj};
             jsCallback.Call(args);
         });
     } });
@@ -368,9 +368,12 @@ Napi::Value IEC104Client::Connect(const Napi::CallbackInfo &info)
     }
     catch (const std::exception &e)
     {
-        // printf("Exception in Connect: %s, clientID: %s\n", e.what(), clientID.c_str());
+        printf("Exception in Connect: %s, clientID: %s\n", e.what(), clientID.c_str());
         Napi::Error::New(env, string("Connect failed: ") + e.what()).ThrowAsJavaScriptException();
         return env.Undefined();
+    }
+    catch (...) {
+        printf("Unknown exception in Connect");
     }
 }
 
@@ -1220,42 +1223,33 @@ void IEC104Client::ConnectionHandler(void *parameter, CS104_Connection con, CS10
 
     // printf("Connection event: %s, reason: %s, clientID: %s\n", eventStr.c_str(), reason.c_str(), client->clientID.c_str());
 
-    try
-    {
-        client->tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback)
-                                     {
-        // Также рекомендуется обернуть внутренности лямбды в try-catch,
-        // особенно если там сложная работа с JS объектами
-        try {
-            Napi::Object eventObj = Napi::Object::New(env);
-            eventObj.Set("clientID", Napi::String::New(env, client->clientID.c_str()));
-            eventObj.Set("type", Napi::String::New(env, "control"));
-            eventObj.Set("event", Napi::String::New(env, eventStr));
-            eventObj.Set("reason", Napi::String::New(env, reason));
-            eventObj.Set("isPrimaryIP", Napi::Boolean::New(env, client->usingPrimaryIp));
-            std::vector<napi_value> args = {Napi::String::New(env, "conn"), eventObj};
-            jsCallback.Call(args);
-        } catch (const std::exception& e) {
-             // Логируем внутреннюю ошибку коллбэка
-              printf("Exception inside ConnectionHandler JS callback: %s, clientID: %s\n", e.what(), client->clientID.c_str());
-             // Внутри коллбэка обычно исключения автоматически преобразуются в JS ошибки,
-             // но если они "выпадают", это проблема. Логирование помогает.
-             // Выбросить JS исключение здесь не получится, так как мы уже внутри JS контекста,
-             // и исключение "выпадает" именно отсюда.
-        } });
+    client->tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback)
+                                 {
+    try {
+        Napi::Object eventObj = Napi::Object::New(env);
+        eventObj.Set("clientID", Napi::String::New(env, client->clientID.c_str()));
+        eventObj.Set("type", Napi::String::New(env, "control"));
+        eventObj.Set("event", Napi::String::New(env, eventStr));
+        eventObj.Set("reason", Napi::String::New(env, reason));
+        eventObj.Set("isPrimaryIP", Napi::Boolean::New(env, client->usingPrimaryIp));
+        
+        // ВАЖНО: Используем Call с пустым контекстом и массивом аргументов
+        jsCallback.Call({Napi::String::New(env, "conn"), eventObj});
+    } 
+    catch (const Napi::Error& e) {
+        // Перехватываем именно Napi::Error (JS исключения)
+        printf("JS Exception in ConnectionHandler: %s, clientID: %s\n", 
+               e.what(), client->clientID.c_str());
+        // Можно также отправить ошибку обратно, но осторожно, чтобы не создать бесконечный цикл
     }
-    catch (const std::exception &e)
-    {
-        // Логируем ошибку, если NonBlockingCall не смог поставить задачу в очередь
-        // (например, если tsfn уже был Release())
-         printf("Exception calling tsfn.NonBlockingCall in ConnectionHandler: %s, clientID: %s\n", e.what(), client->clientID.c_str());
-        // В этом месте мы всё ещё в C++ контексте вне JS, поэтому ловим и логируем.
-        // Бросать JS исключение здесь нельзя, так как мы не в JS функции.
+    catch (const std::exception& e) {
+        printf("C++ Exception in ConnectionHandler: %s, clientID: %s\n", 
+               e.what(), client->clientID.c_str());
     }
-    catch (...)
-    {
-         printf("Unknown exception calling tsfn.NonBlockingCall in ConnectionHandler, clientID: %s\n", client->clientID.c_str());
-    }
+    catch (...) {
+        printf("Unknown exception in ConnectionHandler, clientID: %s\n", 
+               client->clientID.c_str());
+    } });
 }
 
 bool IEC104Client::RawMessageHandler(void *parameter, int address, CS101_ASDU asdu)
@@ -1679,20 +1673,30 @@ bool IEC104Client::RawMessageHandler(void *parameter, int address, CS101_ASDU as
                 // Отправляем данные в JavaScript
                 client->tsfn.NonBlockingCall([=](Napi::Env env, Napi::Function jsCallback)
                                              {
-            try {
-                Napi::Object eventObj = Napi::Object::New(env);
-                eventObj.Set("clientID", Napi::String::New(env, client->clientID.c_str()));
-                eventObj.Set("type", Napi::String::New(env, "fileList"));
-                eventObj.Set("fileName", Napi::String::New(env, fileName));
-                eventObj.Set("fileSize", Napi::Number::New(env, fileSize));
-                eventObj.Set("timestamp", Napi::Number::New(env, static_cast<double>(msTimestamp)));
-                eventObj.Set("oscnum", Napi::Number::New(env, oscnum));
-                eventObj.Set("isPrimaryIP", Napi::Boolean::New(env, client->usingPrimaryIp));
-                std::vector<napi_value> args = {Napi::String::New(env, "data"), eventObj};
-                jsCallback.Call(args);
-            } catch (const Napi::Error& e) {
-                //printf("N-API callback error in F_DR_TA_1: %s, clientID: %s\n", e.what(), client->clientID.c_str());
-            } });
+                                                 try
+                                                 {
+                                                     Napi::Object eventObj = Napi::Object::New(env);
+                                                     eventObj.Set("clientID", Napi::String::New(env, client->clientID.c_str()));
+                                                     eventObj.Set("type", Napi::String::New(env, "fileList"));
+                                                     eventObj.Set("fileName", Napi::String::New(env, fileName));
+                                                     eventObj.Set("fileSize", Napi::Number::New(env, fileSize));
+                                                     eventObj.Set("timestamp", Napi::Number::New(env, static_cast<double>(msTimestamp)));
+                                                     eventObj.Set("oscnum", Napi::Number::New(env, oscnum));
+                                                     eventObj.Set("isPrimaryIP", Napi::Boolean::New(env, client->usingPrimaryIp));
+                                                     std::vector<napi_value> args = {Napi::String::New(env, "data"), eventObj};
+                                                     jsCallback.Call(args);
+                                                 }
+                                                 catch (const Napi::Error &e)
+                                                 {
+                                                     printf("JS Exception in file handler: %s, clientID: %s\n",
+                                                            e.what(), client->clientID.c_str());
+                                                 }
+                                                 catch (const std::exception &e)
+                                                 {
+                                                     printf("C++ Exception in file handler: %s, clientID: %s\n",
+                                                            e.what(), client->clientID.c_str());
+                                                 }
+                                             });
             }
 
             if (offset < payloadSize)
